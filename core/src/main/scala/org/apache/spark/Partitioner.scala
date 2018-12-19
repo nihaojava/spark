@@ -59,7 +59,7 @@ object Partitioner {
    * be least likely to cause out-of-memory errors.
    * 除非设置了spark.default.parallelism，否则分区数将会和 上游RDD的最大分区数一样，这样可以最小可能的引起OOM。
    *
-   * We use two method parameters (rdd, others) to enforce callers passing at least 1 RDD.
+   * We use two method parameters (rdd, others) to enforce callers passing at least 1 RDD。
    * 我们使用两个方法参数 (rdd, others)来保证调用者至少传递一个RDD。
    */
   def defaultPartitioner(rdd: RDD[_], others: RDD[_]*): Partitioner = {

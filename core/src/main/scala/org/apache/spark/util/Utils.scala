@@ -1659,6 +1659,9 @@ private[spark] object Utils extends Logging {
  /* Calculates 'x' modulo 'mod', takes to consideration sign of x,
   * i.e. if 'x' is negative, than 'x' % 'mod' is negative too
   * so function return (x % mod) + mod in that case.
+  * 计算x对mod取模，考虑到x可能是负的（java中的hashCode可能是负的），这样 x%mod 有可能是负的。
+  * 因此当x是负的时候，函数返回 (x % mod) + mod。
+  * (x如果是负的，那么x % mod取值范围[-(mod-1),0],+mod 取值范围变为[0,mod-1])
   */
   def nonNegativeMod(x: Int, mod: Int): Int = {
     val rawMod = x % mod

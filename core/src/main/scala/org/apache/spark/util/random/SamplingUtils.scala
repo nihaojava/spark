@@ -24,11 +24,12 @@ private[spark] object SamplingUtils {
 
   /**
    * Reservoir sampling implementation that also returns the input size.
+   *  水塘采样算法具体实现见:https://www.cnblogs.com/strugglion/p/6424874.html
    *
-   * @param input input size
-   * @param k reservoir size
+   * @param input input size // 应该是输入数据
+   * @param k reservoir size  //水塘大小，即采样个数
    * @param seed random seed
-   * @return (samples, input size)
+   * @return (samples, input size) //返回（采样数组，输入数据的大小）
    */
   def reservoirSampleAndCount[T: ClassTag](
       input: Iterator[T],
@@ -37,6 +38,7 @@ private[spark] object SamplingUtils {
     : (Array[T], Long) = {
     val reservoir = new Array[T](k)
     // Put the first k elements in the reservoir.
+    // 将前k个元素先放入水塘数组reservoir
     var i = 0
     while (i < k && input.hasNext) {
       val item = input.next()
@@ -45,6 +47,8 @@ private[spark] object SamplingUtils {
     }
 
     // If we have consumed all the elements, return them. Otherwise do the replacement.
+    // 如果input数组中已经没有元素了，则返回已经入水塘的
+    // 这种情况是采样个数>input的数组元素个数
     if (i < k) {
       // If input size < k, trim the array to return only an array of input size.
       val trimReservoir = new Array[T](i)
@@ -52,6 +56,7 @@ private[spark] object SamplingUtils {
       (trimReservoir, i)
     } else {
       // If input size > k, continue the sampling process.
+      // 继续采样
       var l = i.toLong
       val rand = new XORShiftRandom(seed)
       while (input.hasNext) {
@@ -61,6 +66,7 @@ private[spark] object SamplingUtils {
         // consumed. It should be chosen with probability k/l. The expression
         // below is a random long chosen uniformly from [0,l)
         val replacementIndex = (rand.nextDouble() * l).toLong
+        // 如果生成的随机数replacementIndex<k,则进行替换
         if (replacementIndex < k) {
           reservoir(replacementIndex.toInt) = item
         }

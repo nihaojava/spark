@@ -159,7 +159,7 @@ class RangePartitioner[K : Ordering : ClassTag, V](
         // If a partition contains much more than the average number of items, we re-sample from it
         // to ensure that enough items are collected from that partition.
         // 如果某个分区的元素个数>>远远大于分区的平均元素个数，我们会重新采样保证那个分区有足够多的采样数据。
-        // 计算总样本数量和总记录数的占比，占比最大为1.0
+        // 计算总样本数量和总记录数的占比，占比最大为1.0，（也就是平均每个分区的采样比例）
         val fraction = math.min(sampleSize / math.max(numItems, 1L), 1.0)
         // 保存样本数据的集合buffer
         val candidates = ArrayBuffer.empty[(K, Float)]
@@ -169,6 +169,7 @@ class RangePartitioner[K : Ordering : ClassTag, V](
         sketched.foreach { case (idx, n, sample) =>
           // 如果fraction乘以当前分区中的数据量大于之前计算的每个分区的抽象数据大小，
           // 那么表示当前分区抽取的数据太少了，该分区数据分布不均衡，需要重新抽取
+          // 也就是说:(fraction * n)=该partition应该采样的平均值 > 先前计算的每个分区应该采样的值
           if (fraction * n > sampleSizePerPartition) {
             imbalancedPartitions += idx
           } else {
@@ -198,7 +199,7 @@ class RangePartitioner[K : Ordering : ClassTag, V](
       }
     }
   }
-
+  // 边界数组长度+1 ？ 因为，举例：一个绳子剪3刀，会分成4段。类似的道理。会分成数组长度+1个分区。
   def numPartitions: Int = rangeBounds.length + 1
 
   private var binarySearch: ((Array[K], K) => Int) = CollectionsUtils.makeBinarySearch[K]
@@ -324,7 +325,7 @@ private[spark] object RangePartitioner {
    * 从包含权重候选数组ArrayBuffer[(候选边界K, 权重Float)]中确定range partition划分的边界。
    * 通常情况下是
    * @param candidates unordered candidates with weights //未排序的ArrayBuffer[(待定边界值K, 权重Float)]
-   * @param partitions number of partitions //分区数
+   * @param partitions number of partitions //期望分区数
    * @return selected bounds //确定的最终边界值Array[K]
    */
   def determineBounds[K : Ordering : ClassTag](
@@ -346,6 +347,7 @@ private[spark] object RangePartitioner {
     var j = 0
     //保存上一个边界的值
     var previousBound = Option.empty[K]
+    // 遍历数组，j < partitions - 1，说明bounds数组元素的个数为最大为partitions - 1个
     while ((i < numCandidates) && (j < partitions - 1)) {
       // 获取排序后的第i个数据及权重
       val (key, weight) = ordered(i)

@@ -31,16 +31,21 @@ private[spark] class PartitionPruningRDDPartition(idx: Int, val parentSplit: Par
 /**
  * Represents a dependency between the PartitionPruningRDD and its parent. In this
  * case, the child RDD contains a subset of partitions of the parents'.
+ * 表示 PartitionPruningRDD 剪掉部分分区的RDD和它的父RDD之间的依赖。【注意目前只用于PartitionPruningRDD】
+ * 在这种情况下，子RDD包含父RDD分区的一个子集。
  */
 private[spark] class PruneDependency[T](rdd: RDD[T], partitionFilterFunc: Int => Boolean)
   extends NarrowDependency[T](rdd) {
 
+  // 单机操作，过滤出父RDD的部分Partitions 原封不动的包装成为自己的RDD
+  // 【例如：partition1，没有partition0】
   @transient
   val partitions: Array[Partition] = rdd.partitions
     .filter(s => partitionFilterFunc(s.index)).zipWithIndex
     .map { case(split, idx) => new PartitionPruningRDDPartition(idx, split) : Partition }
 
   override def getParents(partitionId: Int): List[Int] = {
+    // partitionId应该是不变的
     List(partitions(partitionId).asInstanceOf[PartitionPruningRDDPartition].parentSplit.index)
   }
 }
@@ -52,6 +57,9 @@ private[spark] class PruneDependency[T](rdd: RDD[T], partitionFilterFunc: Int =>
  * all partitions. An example use case: If we know the RDD is partitioned by range,
  * and the execution DAG has a filter on the key, we can avoid launching tasks
  * on partitions that don't have the range covering the key.
+ * 一个用于剪掉原来RDD部分partitions的RDD,因为这样我们可以避免在所有分区上启动task。
+ * 一个用例：如果我们知道一个RDD是通过Range分区的，并且执行逻辑中有一个filter Key的操作，
+ * 我们可以避免发布task到 key不在该分区Range范围内的分区上。
  */
 @DeveloperApi
 class PartitionPruningRDD[T: ClassTag](

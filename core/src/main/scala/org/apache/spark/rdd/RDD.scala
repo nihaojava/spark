@@ -57,6 +57,13 @@ import org.apache.spark.util.random.{BernoulliCellSampler, BernoulliSampler, Poi
  * can be saved as SequenceFiles.
  * All operations are automatically available on any RDD of the right type (e.g. RDD[(Int, Int)]
  * through implicit.
+ * 一个分布式的数据集(RDD)，在spark中基础的抽象类。表示了一个不可变的，分区的元素集合，这个集合可以被并行的操作。
+ * 这个类包含了在所有RDD上可用的基础操作，例如 map,filter,persist。
+ * 进一步说明，PairRDDFunctions 只包含了key-value对型的RDD上可以使用的操作，例如groupByKey,join.
+ * DoubleRDDFunctions 只包含了Double型RDD可以使用的操作。？
+ * SequenceFileRDDFunctions 只包含了那些可以被保存成SequenceFiles（二进制文件）的RDD可以使用的操作。
+ * // 少了一个OrderedRDDFunctions，OrderedRDDFunctions只包含了key-value对型并且Key支持排序的RDD可以使用的操作，例如SortByKey.
+ * 所有的操作在正确类型的RDD上自动可用，是通过隐式转换实现的。
  *
  * Internally, each RDD is characterized by five main properties:
  *
@@ -67,11 +74,20 @@ import org.apache.spark.util.random.{BernoulliCellSampler, BernoulliSampler, Poi
  *  - Optionally, a list of preferred locations to compute each split on (e.g. block locations for
  *    an HDFS file)
  *
+ * 在内部，每个RDD有五个特征：
+ *  1. 一个分区集合
+ *  2. 一个函数，用于计算每个分区
+ *  3. 一个依赖集合对其他RDD们的
+ *  4. 可选，一个分区器，对于key-value型RDD（）
+ *  5. 可选，一个优先位置集合（就是host）用于计算每个分区
+ *
  * All of the scheduling and execution in Spark is done based on these methods, allowing each RDD
  * to implement its own way of computing itself. Indeed, users can implement custom RDDs (e.g. for
  * reading data from a new storage system) by overriding these functions. Please refer to the
  * <a href="http://people.csail.mit.edu/matei/papers/2012/nsdi_spark.pdf">Spark paper</a>
  * for more details on RDD internals.
+ * 所有执行计划和执行的完成 依赖这些方法，允许每个RDD有自己的计算方式。其实，用户可以自定义RDD通过重写这些函数。（例如从新的
+ * 存储系统读取数据）。可以参考相应的论文链接更多的RDD内部细节。
  */
 abstract class RDD[T: ClassTag](
     @transient private var _sc: SparkContext,
@@ -100,6 +116,7 @@ abstract class RDD[T: ClassTag](
   }
 
   /** Construct an RDD with just a one-to-one dependency on one parent */
+  // 构造这样一个RDD，只有一个父RDD，并且和父RDD之间是1对1的依赖
   def this(@transient oneParent: RDD[_]) =
     this(oneParent.context, List(new OneToOneDependency(oneParent)))
 
@@ -127,6 +144,7 @@ abstract class RDD[T: ClassTag](
   /**
    * Implemented by subclasses to return how this RDD depends on parent RDDs. This method will only
    * be called once, so it is safe to implement a time-consuming computation in it.
+   * 由子类实现，返回此RDD依赖的父RDD。只会计算一次，因为计算比较耗时。
    */
   protected def getDependencies: Seq[Dependency[_]] = deps
 
@@ -159,20 +177,25 @@ abstract class RDD[T: ClassTag](
 
   /**
    * Mark this RDD for persisting using the specified level.
+   * 标记此RDD为指定的存储级别
    *
    * @param newLevel the target storage level
-   * @param allowOverride whether to override any existing level with the new one
+   * @param allowOverride whether to override any existing level with the new one //是否覆盖已经存在的
    */
   private def persist(newLevel: StorageLevel, allowOverride: Boolean): this.type = {
     // TODO: Handle changes of StorageLevel
+    // 如果原来的storageLevel不为NONE，并且新指定的storageLevel和以前的不一样，并且不允许覆盖，抛异常
     if (storageLevel != StorageLevel.NONE && newLevel != storageLevel && !allowOverride) {
       throw new UnsupportedOperationException(
         "Cannot change storage level of an RDD after it was already assigned a level")
     }
     // If this is the first time this RDD is marked for persisting, register it
     // with the SparkContext for cleanups and accounting. Do this only once.
+    // 如果这是此RDD第一次标记为需要持久化，注册它到sparkContext，用于清理和合算。这种操作只进行一次。
     if (storageLevel == StorageLevel.NONE) {
+      // 用于清理
       sc.cleaner.foreach(_.registerRDDForCleanup(this))
+      // 真正的persist操作
       sc.persistRDD(this)
     }
     storageLevel = newLevel
@@ -183,12 +206,17 @@ abstract class RDD[T: ClassTag](
    * Set this RDD's storage level to persist its values across operations after the first time
    * it is computed. This can only be used to assign a new storage level if the RDD does not
    * have a storage level set yet. Local checkpointing is an exception.
+   * 设置此RDD的存储级别来持久化它的值，在此RDD在第一次计算的时候进行操作。
+   * 这只能用于分配一个新的存储级别，如果此RDD没有设置存储级别。
+   * Local checkpointing 是一个例外。
    */
   def persist(newLevel: StorageLevel): this.type = {
     if (isLocallyCheckpointed) {
       // This means the user previously called localCheckpoint(), which should have already
       // marked this RDD for persisting. Here we should override the old storage level with
       // one that is explicitly requested by the user (after adapting it to use disk).
+      // 这意味着用户之前调用过localCheckpoint，已经标记此RDDpersisting。
+      //在这里，我们应该用用户明确要求的存储级别覆盖旧的存储级别（以后将其调整为使用磁盘）
       persist(LocalRDDCheckpointData.transformStorageLevel(newLevel), allowOverride = true)
     } else {
       persist(newLevel, allowOverride = false)
@@ -219,22 +247,33 @@ abstract class RDD[T: ClassTag](
   }
 
   /** Get the RDD's current storage level, or StorageLevel.NONE if none is set. */
+  // 返回这个RDD现在的storageLevel，如果没有设置就是StorageLevel.NONE
   def getStorageLevel: StorageLevel = storageLevel
 
   // Our dependencies and partitions will be gotten by calling subclass's methods below, and will
   // be overwritten when we're checkpointed
+  // 我们的依赖和分区将通过调用子类的下面的方法得到，当我们已经checkpointed的时候会重写
   private var dependencies_ : Seq[Dependency[_]] = null
   @transient private var partitions_ : Array[Partition] = null
 
   /** An Option holding our checkpoint RDD, if we are checkpointed */
+  // 如果我们进行了checkpoint，checkpointRDD就代表checkpoint的RDD。//
+  // 因为次处是两个Option,返回类型是一个Option，所以不能用map，而是flatMap
   private def checkpointRDD: Option[CheckpointRDD[T]] = checkpointData.flatMap(_.checkpointRDD)
 
   /**
    * Get the list of dependencies of this RDD, taking into account whether the
    * RDD is checkpointed or not.
+   * 得到该RDD的依赖列表。
+   * 判断如果此RDD存在checkpointRDD的话，此RDD即为依赖的父RDD，依赖关系为1对1。
+   * 【如果此RDD存在checkpointRDD的话,以前的依赖都被清空了】
+   * 否则的话，
    */
   final def dependencies: Seq[Dependency[_]] = {
+    // 如果此RDD存在checkpointRDD的话，此RDD即为依赖的父RDD，依赖关系为1对1。
     checkpointRDD.map(r => List(new OneToOneDependency(r))).getOrElse {
+      // 否则的话，若dependencies_不为空(new的时候通过构造函数传过来了)，返回；
+      // 若为空调用子类的getDependencies方法
       if (dependencies_ == null) {
         dependencies_ = getDependencies
       }
@@ -279,8 +318,10 @@ abstract class RDD[T: ClassTag](
    * Internal method to this RDD; will read from cache if applicable, or otherwise compute it.
    * This should ''not'' be called by users directly, but is available for implementors of custom
    * subclasses of RDD.
+   * RDD的内部方法，如果有cache从cache读取，否则进行计算。
    */
   final def iterator(split: Partition, context: TaskContext): Iterator[T] = {
+    // 如果有persist的话，先从persist获取
     if (storageLevel != StorageLevel.NONE) {
       getOrCompute(split, context)
     } else {
@@ -314,9 +355,11 @@ abstract class RDD[T: ClassTag](
 
   /**
    * Compute an RDD partition or read it from a checkpoint if the RDD is checkpointing.
+   * 计算一个RDD分区，如果RDD是checkpointed 就从checkpoint 读取
    */
   private[spark] def computeOrReadCheckpoint(split: Partition, context: TaskContext): Iterator[T] =
   {
+    // 判断RDD是否是checkpointed
     if (isCheckpointedAndMaterialized) {
       firstParent[T].iterator(split, context)
     } else {
@@ -326,11 +369,13 @@ abstract class RDD[T: ClassTag](
 
   /**
    * Gets or computes an RDD partition. Used by RDD.iterator() when an RDD is cached.
+   * 获取 或者 计算一个RDD的分区。 如果RDD被cache的话，调用RDD.iterator()
    */
   private[spark] def getOrCompute(partition: Partition, context: TaskContext): Iterator[T] = {
     val blockId = RDDBlockId(id, partition.index)
     var readCachedBlock = true
     // This method is called on executors, so we need call SparkEnv.get instead of sc.env.
+    // 这个方法会在executors上执行
     SparkEnv.get.blockManager.getOrElseUpdate(blockId, storageLevel, elementClassTag, () => {
       readCachedBlock = false
       computeOrReadCheckpoint(partition, context)
@@ -1534,20 +1579,33 @@ abstract class RDD[T: ClassTag](
    * RDDs will be removed. This function must be called before any job has been
    * executed on this RDD. It is strongly recommended that this RDD is persisted in
    * memory, otherwise saving it on a file will require recomputation.
+   * 标记此RDD需要checkpoint。
+   * 这个RDD将被保存到SparkContext.setCheckpointDir设置的目录下的【应该是一些】文件
+   * 并且 所有指向父RDD的引用将被移除。【也就是原来的dependies会被清楚】。
+   * 在这个RDD上的任何一个job执行之前一定会调用此方法。
+   * 【因为runJob的时候会查看此RDD是否需checkpointing，即有没有标记需要checkpointing】
+   * 【强烈建议将这个RDD持久化到内存，否则将它保存到文件将需要重新计算】。
    */
   def checkpoint(): Unit = RDDCheckpointData.synchronized {
     // NOTE: we use a global lock here due to complexities downstream with ensuring
     // children RDD partitions point to the correct parent partitions. In the future
     // we should revisit this consideration.
+    // 注意：这里我们使用了一个全局锁，是为了保障下游子RDD分区指向正确的父RDD的分区的复杂性考虑。
+    // 在将来我们需要重新考虑这个问题。
+    // checkpointDir目录不能为空
     if (context.checkpointDir.isEmpty) {
       throw new SparkException("Checkpoint directory has not been set in the SparkContext")
     } else if (checkpointData.isEmpty) {
+      // 如果checkpointData为None，最后生成一个新的ReliableRDDCheckpointData,以当前对象为参数（即调用者RDD）
+      // checkpoint的逻辑主要体现在 ReliableRDDCheckpointData#doCheckpoint函数中。
+      // 隐含，如果已经checkpointed的RDD，再调用checkpoint方法，将不做任何操作
       checkpointData = Some(new ReliableRDDCheckpointData(this))
     }
   }
 
   /**
    * Mark this RDD for local checkpointing using Spark's existing caching layer.
+   * 使用Spark现有的缓存层将此RDD标记为本地检查点。
    *
    * This method is for users who wish to truncate RDD lineages while skipping the expensive
    * step of replicating the materialized data in a reliable distributed file system. This is
@@ -1616,6 +1674,7 @@ abstract class RDD[T: ClassTag](
    * Return whether this RDD is checkpointed and materialized, either reliably or locally.
    * This is introduced as an alias for `isCheckpointed` to clarify the semantics of the
    * return value. Exposed for testing.
+   * 返回此RDD是否已经checkpointed和实例化
    */
   private[spark] def isCheckpointedAndMaterialized: Boolean =
     checkpointData.exists(_.isCheckpointed)
@@ -1673,21 +1732,27 @@ abstract class RDD[T: ClassTag](
   // less data but is not safe for all workloads. E.g. in streaming we may checkpoint both
   // an RDD and its parent in every batch, in which case the parent may never be checkpointed
   // and its lineage never truncated, leading to OOMs in the long run (SPARK-6847).
+  // 是否对标记为需要检查点的祖先RDD们进行checkpoint呢。默认情况，我们一找到第一个标记需要checkpoint的
+  // 祖先RDD就停止了。这是一个优化，让我们写更少的数据，但并不是在所有负载下都是安全的。
+  //
   private val checkpointAllMarkedAncestors =
     Option(sc.getLocalProperty(RDD.CHECKPOINT_ALL_MARKED_ANCESTORS))
       .map(_.toBoolean).getOrElse(false)
 
   /** Returns the first parent RDD */
+  // 返回最近的（也就是第一个）父RDD
   protected[spark] def firstParent[U: ClassTag]: RDD[U] = {
     dependencies.head.rdd.asInstanceOf[RDD[U]]
   }
 
   /** Returns the jth parent RDD: e.g. rdd.parent[T](0) is equivalent to rdd.firstParent[T] */
+  // 返回jth下标的RDD
   protected[spark] def parent[U: ClassTag](j: Int) = {
     dependencies(j).rdd.asInstanceOf[RDD[U]]
   }
 
   /** The [[org.apache.spark.SparkContext]] that this RDD was created on. */
+  // 创建该RDD的SparkContext，初始RDD才有
   def context: SparkContext = sc
 
   /**
@@ -1708,27 +1773,42 @@ abstract class RDD[T: ClassTag](
   }
 
   // Avoid handling doCheckpoint multiple times to prevent excessive recursion
+  // 避免同一个RDD上执行多次 doCheckpoint ，从而来阻止过多的递归
+  // 不管是否真的Checkpoint了，只要调用一次doCheckpoint（）就标记为true，不再调用
   @transient private var doCheckpointCalled = false
 
   /**
    * Performs the checkpointing of this RDD by saving this. It is called after a job using this RDD
    * has completed (therefore the RDD has been materialized and potentially stored in memory).
    * doCheckpoint() is called recursively on the parent RDDs.
+   * 完成此RDD的checkpointing。在这个RDD的一个job运行完成之后，调用此方法。
+   * (因为此RDD已经物化并可能存储在内存中)
+   * doCheckpoint方法会递归的在这个RDD的父RDD上调用。
    */
   private[spark] def doCheckpoint(): Unit = {
     RDDOperationScope.withScope(sc, "checkpoint", allowNesting = false, ignoreParent = true) {
+      // 是否已经调用过此方法
       if (!doCheckpointCalled) {
+        //标记为true，以后不再调用
         doCheckpointCalled = true
+        //如果checkpointData不为None【意思是，此RDD是否标记为需要checkpoint】
         if (checkpointData.isDefined) {
+          // 是否为标记为需要checkpoint的祖先RDD也进行checkpoint，默认false，不进行
           if (checkpointAllMarkedAncestors) {
             // TODO We can collect all the RDDs that needs to be checkpointed, and then checkpoint
             // them in parallel.
             // Checkpoint parents first because our lineage will be truncated after we
             // checkpoint ourselves
+            // 首先Checkpoint父RDD，因为在我们checkpoint自身之后，我们的血统将被截断？
+            // 遍历依赖的rdd，调用每个rdd的doCheckpoint方法
+            // 父RDD还会调用它的父RDD，递归的过程
             dependencies.foreach(_.rdd.doCheckpoint())
           }
+          // checkpoint当前RDD，执行实际的操作
           checkpointData.get.checkpoint()
         } else {
+          // 如果当前RDD没有标记为需要checkPoint，递归，找到它的第一个需要checkPoint的祖先RDD，执行checkPoint，退出。
+          // 如果dependencies是多个RDD的话，是找多个需要checkPoint的祖先RDD...
           dependencies.foreach(_.rdd.doCheckpoint())
         }
       }
@@ -1738,6 +1818,8 @@ abstract class RDD[T: ClassTag](
   /**
    * Changes the dependencies of this RDD from its original parents to a new RDD (`newRDD`)
    * created from the checkpoint file, and forget its old dependencies and partitions.
+   * 修改此RDD的依赖（也就是lineage）：从原来的父RDD 修改为 由checkPoint file创建的 `newRDD`，
+   * 丢掉它旧的依赖和分区。
    */
   private[spark] def markCheckpointed(): Unit = {
     clearDependencies()
@@ -1756,6 +1838,7 @@ abstract class RDD[T: ClassTag](
   }
 
   /** A description of this RDD and its recursive dependencies for debugging. */
+  // 该RDD递归依赖的一个描述，用于debug
   def toDebugString: String = {
     // Get a debug description of an rdd without its children
     def debugSelf(rdd: RDD[_]): Seq[String] = {

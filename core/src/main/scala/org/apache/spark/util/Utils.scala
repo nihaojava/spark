@@ -1766,6 +1766,8 @@ private[spark] object Utils extends Logging {
    * Counts the number of elements of an iterator using a while loop rather than calling
    * [[scala.collection.Iterator#size]] because it uses a for loop, which is slightly slower
    * in the current version of Scala.
+   * 获取一个iterator中的元素个数，使用一个while循环而不是调用Iterator#size，
+   * 因为Iterator#size使用了for循环，在当前版本的scala中for比while稍微慢点。
    */
   def getIteratorSize[T](iterator: Iterator[T]): Long = {
     var count = 0L

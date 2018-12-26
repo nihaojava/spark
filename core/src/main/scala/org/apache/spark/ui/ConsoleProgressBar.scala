@@ -27,6 +27,9 @@ import org.apache.spark.internal.Logging
  * status of active stages from `sc.statusTracker` periodically, the progress bar will be showed
  * up after the stage has ran at least 500ms. If multiple stages run in the same time, the status
  * of them will be combined together, showed in one line.
+ * 控制台进度条 在控制台的下一行展示stage的进度。它定期从`sc.statusTracker`轮询active stages 的状态，
+ * 进度条在stage至少运行了500毫秒之后才会显示。如果同时有多个stages在运行，这些stage的状态会合并在一起，
+ * 显示在一行。
  */
 private[spark] class ConsoleProgressBar(sc: SparkContext) extends Logging {
   // Carriage return
@@ -38,6 +41,7 @@ private[spark] class ConsoleProgressBar(sc: SparkContext) extends Logging {
   private val firstDelayMSec = 500L
 
   // The width of terminal
+  // 终端的宽度
   private val TerminalWidth = if (!sys.env.getOrElse("COLUMNS", "").isEmpty) {
     sys.env.get("COLUMNS").get.toInt
   } else {
@@ -49,6 +53,7 @@ private[spark] class ConsoleProgressBar(sc: SparkContext) extends Logging {
   private var lastProgressBar = ""
 
   // Schedule a refresh thread to run periodically
+  // 安排一个刷新线程定期运行
   private val timer = new Timer("refresh progress", true)
   timer.schedule(new TimerTask{
     override def run() {
@@ -58,6 +63,7 @@ private[spark] class ConsoleProgressBar(sc: SparkContext) extends Logging {
 
   /**
    * Try to refresh the progress bar in every cycle
+   * 尝试在每一个周期刷新进度条
    */
   private def refresh(): Unit = synchronized {
     val now = System.currentTimeMillis()
@@ -106,6 +112,7 @@ private[spark] class ConsoleProgressBar(sc: SparkContext) extends Logging {
 
   /**
    * Clear the progress bar if showed.
+   * 清除展示的进度条
    */
   private def clear() {
     if (!lastProgressBar.isEmpty) {
@@ -117,6 +124,7 @@ private[spark] class ConsoleProgressBar(sc: SparkContext) extends Logging {
   /**
    * Mark all the stages as finished, clear the progress bar if showed, then the progress will not
    * interweave with output of jobs.
+   * 标记所有的stages为完成，清除展示的进度条，那么输出的joibs进度就不会交织在一起了
    */
   def finishAll(): Unit = synchronized {
     clear()

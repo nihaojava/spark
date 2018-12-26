@@ -198,7 +198,7 @@ class SparkContext(config: SparkConf) extends Logging {
   private var _env: SparkEnv = _
   private var _jobProgressListener: JobProgressListener = _
   private var _statusTracker: SparkStatusTracker = _
-  private var _progressBar: Option[ConsoleProgressBar] = None
+  private var _progressBar: Option[ConsoleProgressBar] = None //控制台进度条
   private var _ui: Option[SparkUI] = None
   private var _hadoopConfiguration: Configuration = _
   private var _executorMemory: Int = _
@@ -264,6 +264,7 @@ class SparkContext(config: SparkConf) extends Logging {
   private[spark] val addedJars = new ConcurrentHashMap[String, Long]().asScala
 
   // Keeps track of all persisted RDDs
+  // 持有所有持久化的RDD
   private[spark] val persistentRdds = {
     val map: ConcurrentMap[Int, RDD[_]] = new MapMaker().weakValues().makeMap[Int, RDD[_]]()
     map.asScala
@@ -443,6 +444,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
     _statusTracker = new SparkStatusTracker(this)
 
+    // 进度条
     _progressBar =
       if (_conf.getBoolean("spark.ui.showConsoleProgress", true) && !log.isInfoEnabled) {
         Some(new ConsoleProgressBar(this))
@@ -1784,13 +1786,16 @@ class SparkContext(config: SparkConf) extends Logging {
 
   /**
    * Register an RDD to be persisted in memory and/or disk storage
+   * 注册一个RDD将被持久化到 内存 或 磁盘。
    */
   private[spark] def persistRDD(rdd: RDD[_]) {
+    // 存入persistentRdds Map
     persistentRdds(rdd.id) = rdd
   }
 
   /**
    * Unpersist an RDD from memory and/or disk storage
+   * 删除persistd的RDD
    */
   private[spark] def unpersistRDD(rddId: Int, blocking: Boolean = true) {
     env.blockManager.master.removeRdd(rddId, blocking)
@@ -1991,29 +1996,43 @@ class SparkContext(config: SparkConf) extends Logging {
   /**
    * Run a function on a given set of partitions in an RDD and pass the results to the given
    * handler function. This is the main entry point for all actions in Spark.
+   * 在给定的一个RDD的一个分区集合上运行一个函数 并且 将结果传递给提供的处理函数 handler function。
+   * 这是spark所有action的主入口。
    *
-   * @param rdd target RDD to run tasks on
-   * @param func a function to run on each partition of the RDD
+   * @param rdd target RDD to run tasks on  在该RDD上运行作业
+   * @param func a function to run on each partition of the RDD 运行在该RDD的每个分区上的函数
    * @param partitions set of partitions to run on; some jobs may not want to compute on all
    * partitions of the target RDD, e.g. for operations like `first()`
+   * 任务运行所在的分区，一些作业不会在RDD的所有分区计算，例如，向`first()`操作
    * @param resultHandler callback to pass each result to
+   * 回调将每个结果传递给该函数，
+   * 【该函数使用了闭包，绑定了外部的数组results[T],会将每个分区的计算结果以分区ID作为下标存储在results数组，
+   * 例如results[1] = partition1的计算结果】
+   * 其他的runJob最后都会调用该runJob
    */
   def runJob[T, U: ClassTag](
       rdd: RDD[T],
       func: (TaskContext, Iterator[T]) => U,
       partitions: Seq[Int],
       resultHandler: (Int, U) => Unit): Unit = {
+    // 判断SparkContext是否已经停止
     if (stopped.get()) {
       throw new IllegalStateException("SparkContext has been shutdown")
     }
+    // 获取调用栈
     val callSite = getCallSite
     val cleanedFunc = clean(func)
+    // 记录用户调用栈
     logInfo("Starting job: " + callSite.shortForm)
+    //是否记录RDD递归依赖信息
     if (conf.getBoolean("spark.logLineage", false)) {
       logInfo("RDD's recursive dependencies:\n" + rdd.toDebugString)
     }
+    // 正式提交作业
     dagScheduler.runJob(rdd, cleanedFunc, partitions, callSite, resultHandler, localProperties.get)
+    // 更新进度条为完成状态
     progressBar.foreach(_.finishAll())
+    // 当RDD的job计算完，才真正执行checkPoint
     rdd.doCheckpoint()
   }
 
@@ -2058,11 +2077,15 @@ class SparkContext(config: SparkConf) extends Logging {
   /**
    * Run a job on all partitions in an RDD and return the results in an array. The function
    * that is run against each partition additionally takes `TaskContext` argument.
+   * 在这个RDD的所有分区上运行一个job，返回结果放入数组。传入func函数的运行时针对每个partition的，
+   * 该函数接受一个`TaskContext`参数。
    *
-   * @param rdd target RDD to run tasks on
-   * @param func a function to run on each partition of the RDD
+   * @param rdd target RDD to run tasks on  运行task的目标RDD
+   * @param func a function to run on each partition of the RDD 运行在每个分区上的函数
    * @return in-memory collection with a result of the job (each collection element will contain
    * a result from one partition)
+   * 返回： job的返回结果是内存中的集合（集合中每个元素代表一个分区的计算结果）
+   * 【partitionsID 集合 传递了0 until rdd.partitions.length】就是所有分区ID，0到length-1
    */
   def runJob[T, U: ClassTag](rdd: RDD[T], func: (TaskContext, Iterator[T]) => U): Array[U] = {
     runJob(rdd, func, 0 until rdd.partitions.length)

@@ -23,16 +23,21 @@ import org.apache.spark.{Partition, SparkContext, TaskContext}
 
 /**
  * An RDD partition used to recover checkpointed data.
+ * 一个RDD的分区，用于恢复检查点数据。
  */
 private[spark] class CheckpointRDDPartition(val index: Int) extends Partition
 
 /**
  * An RDD that recovers checkpointed data from storage.
+ * 从存储的检查点的数据中恢复得到的 RDD。
  */
+// 注意：RDD[T](sc, Nil) ,依赖为Nil
+// CheckpointRDD 继承了 RDD，没有重写dependencies，所以就继承了父的dependencies，这里是空
 private[spark] abstract class CheckpointRDD[T: ClassTag](sc: SparkContext)
   extends RDD[T](sc, Nil) {
 
   // CheckpointRDD should not be checkpointed again
+  // CheckpointRDD不应该再次进行checkpointed
   override def doCheckpoint(): Unit = { }
   override def checkpoint(): Unit = { }
   override def localCheckpoint(): this.type = this

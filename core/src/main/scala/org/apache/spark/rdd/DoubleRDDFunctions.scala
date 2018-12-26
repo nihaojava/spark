@@ -28,6 +28,7 @@ import org.apache.spark.util.StatCounter
 
 /**
  * Extra functions available on RDDs of Doubles through an implicit conversion.
+ * Doubles类型RDD的功能扩展通过隐式转换实现。
  */
 class DoubleRDDFunctions(self: RDD[Double]) extends Logging with Serializable {
   /** Add up the elements in this RDD. */

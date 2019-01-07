@@ -30,20 +30,23 @@ import org.apache.spark.storage.StorageUtils
 /**
  * Read-only byte buffer which is physically stored as multiple chunks rather than a single
  * contiguous array.
+ * 只读字节缓冲区，物理上存储为多个块，而不是单个连续的数组。
  *
  * @param chunks an array of [[ByteBuffer]]s. Each buffer in this array must have position == 0.
  *               Ownership of these buffers is transferred to the ChunkedByteBuffer, so if these
  *               buffers may also be used elsewhere then the caller is responsible for copying
  *               them as needed.
  */
+/*【ChunkedByteBuffer一批ByteBuffer，包含一个ByteBuffer数组】*/
 private[spark] class ChunkedByteBuffer(var chunks: Array[ByteBuffer]) {
   require(chunks != null, "chunks must not be null")
   require(chunks.forall(_.position() == 0), "chunks' positions must be 0")
-
+  //是否处理过，指的是是否对ByteBuffer进行清理过
   private[this] var disposed: Boolean = false
 
   /**
    * This size of this buffer, in bytes.
+   * ChunkedByteBuffer 的大小（按字节）
    */
   val size: Long = chunks.map(_.limit().asInstanceOf[Long]).sum
 
@@ -53,6 +56,7 @@ private[spark] class ChunkedByteBuffer(var chunks: Array[ByteBuffer]) {
 
   /**
    * Write this buffer to a channel.
+   * 将此ChunkedByteBuffer写到一个channel(就相当于发送出去了，接收端可能文件，可能是socket)。
    */
   def writeFully(channel: WritableByteChannel): Unit = {
     for (bytes <- getChunks()) {
@@ -64,6 +68,7 @@ private[spark] class ChunkedByteBuffer(var chunks: Array[ByteBuffer]) {
 
   /**
    * Wrap this buffer to view it as a Netty ByteBuf.
+   * 包装成一个Netty ByteBuf
    */
   def toNetty: ByteBuf = {
     Unpooled.wrappedBuffer(getChunks(): _*)
@@ -71,7 +76,7 @@ private[spark] class ChunkedByteBuffer(var chunks: Array[ByteBuffer]) {
 
   /**
    * Copy this buffer into a new byte array.
-   *
+   * 拷贝此buffer到一个新的byte array。
    * @throws UnsupportedOperationException if this buffer's size exceeds the maximum array size.
    */
   def toArray: Array[Byte] = {
@@ -79,7 +84,9 @@ private[spark] class ChunkedByteBuffer(var chunks: Array[ByteBuffer]) {
       throw new UnsupportedOperationException(
         s"cannot call toArray because buffer size ($size bytes) exceeds maximum array size")
     }
+    // 构造一个ChunkedByteBuffer大小的Channel
     val byteChannel = new ByteArrayWritableChannel(size.toInt)
+    // 将ChunkedByteBuffer的数据写入到Channel
     writeFully(byteChannel)
     byteChannel.close()
     byteChannel.getData
@@ -87,6 +94,7 @@ private[spark] class ChunkedByteBuffer(var chunks: Array[ByteBuffer]) {
 
   /**
    * Copy this buffer into a new ByteBuffer.
+   * 拷贝此buffer到一个新的ByteBuffer。
    *
    * @throws UnsupportedOperationException if this buffer's size exceeds the max ByteBuffer size.
    */
@@ -100,7 +108,7 @@ private[spark] class ChunkedByteBuffer(var chunks: Array[ByteBuffer]) {
 
   /**
    * Creates an input stream to read data from this ChunkedByteBuffer.
-   *
+   * 创建一个输入流，从ChunkedByteBuffer中读数据
    * @param dispose if true, [[dispose()]] will be called at the end of the stream
    *                in order to close any memory-mapped files which back this buffer.
    */
@@ -110,6 +118,7 @@ private[spark] class ChunkedByteBuffer(var chunks: Array[ByteBuffer]) {
 
   /**
    * Get duplicates of the ByteBuffers backing this ChunkedByteBuffer.
+   * 返回ByteBuffers的副本
    */
   def getChunks(): Array[ByteBuffer] = {
     chunks.map(_.duplicate())
@@ -136,6 +145,8 @@ private[spark] class ChunkedByteBuffer(var chunks: Array[ByteBuffer]) {
    * might cause errors if one attempts to read from the unmapped buffer, but it's better than
    * waiting for the GC to find it because that could lead to huge numbers of open files. There's
    * unfortunately no standard API to do this.
+   * 如果使用了堆外内存，尝试清理它。使用unsafe API，如果试图从未映射的buffer中读会引起error，但是这样
+   * 仍然比等待gc来回收它要好，因为那样会导致大量的打开文件。不幸的是，没有标准的API来做这事。
    */
   def dispose(): Unit = {
     if (!disposed) {
@@ -191,6 +202,7 @@ private[spark] class ChunkedByteBufferInputStream(
     }
   }
 
+  /*跳过指定的byte，读取部分文件的时候经常使用*/
   override def skip(bytes: Long): Long = {
     if (currentChunk != null) {
       val amountToSkip = math.min(bytes, currentChunk.remaining).toInt

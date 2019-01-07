@@ -26,17 +26,21 @@ import org.apache.spark.memory.TaskMemoryManager
 import org.apache.spark.metrics.source.Source
 import org.apache.spark.util.{AccumulatorV2, TaskCompletionListener, TaskFailureListener}
 
-
+// 提供了将TaskContext保存到ThreadLocal中，用于保存每个任务尝试线程的TaskContextImpl的线程安全性。
 object TaskContext {
   /**
    * Return the currently active TaskContext. This can be called inside of
    * user functions to access contextual information about running tasks.
+   * 返回当前激活的TaskContext。在用户定义的函数里会被调用，来访问运行task的上下文信息。
+   * 从ThreadLocal中获取当前任务尝试线程的TaskContextImpl.
    */
   def get(): TaskContext = taskContext.get
 
   /**
    * Returns the partition id of currently active TaskContext. It will return 0
    * if there is no active TaskContext for cases like local execution.
+   * 从ThreadLocal中获取当前任务尝试线程的TaskContextImpl，然后调用TaskContextImpl的
+   * partitionId方法获取分区id。如果TaskContextImpl为null，返回0，像本地执行。
    */
   def getPartitionId(): Int = {
     val tc = taskContext.get()
@@ -46,23 +50,26 @@ object TaskContext {
       tc.partitionId()
     }
   }
-
+  //TaskContext 放在ThreadLocal里，作为各个线程的本地变量，相互隔离
   private[this] val taskContext: ThreadLocal[TaskContext] = new ThreadLocal[TaskContext]
 
   // Note: protected[spark] instead of private[spark] to prevent the following two from
   // showing up in JavaDoc.
   /**
    * Set the thread local TaskContext. Internal to Spark.
+   * 将TaskContextImpl设置到ThreadLocal中
    */
   protected[spark] def setTaskContext(tc: TaskContext): Unit = taskContext.set(tc)
 
   /**
    * Unset the thread local TaskContext. Internal to Spark.
+   * 移除ThreadLocal中保存的当前任务尝试线程的TaskContextImpl
    */
   protected[spark] def unset(): Unit = taskContext.remove()
 
   /**
    * An empty task context that does not represent an actual task.  This is only used in tests.
+   * 创建一个没有实际意义的TaskContextImpl。用于测试
    */
   private[spark] def empty(): TaskContextImpl = {
     new TaskContextImpl(0, 0, 0, 0, null, new Properties, null)

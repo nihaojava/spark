@@ -60,6 +60,8 @@ class BlockRDD[T: ClassTag](sc: SparkContext, @transient val blockIds: Array[Blo
    * Remove the data blocks that this BlockRDD is made from. NOTE: This is an
    * irreversible operation, as the data in the blocks cannot be recovered back
    * once removed. Use it with caution.
+   * 删除此BlockRDD的数据Block。
+   * 注意：这是一个不可逆的操作，一单删除无法恢复。慎重使用。
    */
   private[spark] def removeBlocks() {
     blockIds.foreach { blockId =>

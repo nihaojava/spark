@@ -22,10 +22,15 @@ import org.apache.spark.storage.BlockId
 
 /**
  * A [[MemoryManager]] that statically partitions the heap space into disjoint regions.
+ * 一个MemoryManager的实现，它静态地将堆空间划分为不相交的区域。
+ * 【就是固定的将堆内存划分为两块，用于存储和计算】
+ * 【好处：简单管理，缺点：内存利用率不高，可能有一块内存空闲很多，另一块却不够用】
  *
  * The sizes of the execution and storage regions are determined through
  * `spark.shuffle.memoryFraction` and `spark.storage.memoryFraction` respectively. The two
  * regions are cleanly separated such that neither usage can borrow memory from the other.
+ * 执行内存和存储内存的大小由`spark.shuffle.memoryFraction`和`spark.storage.memoryFraction`决定。
+ * 这两个区域被清晰地分开，这样一个区域就不能从另一个区域中借用内存。
  */
 private[spark] class StaticMemoryManager(
     conf: SparkConf,
@@ -47,16 +52,19 @@ private[spark] class StaticMemoryManager(
   }
 
   // The StaticMemoryManager does not support off-heap storage memory:
+  /*【StaticMemoryManager 不支持堆外存储，支持堆外计算】*/
   offHeapExecutionMemoryPool.incrementPoolSize(offHeapStorageMemoryPool.poolSize)
   offHeapStorageMemoryPool.decrementPoolSize(offHeapStorageMemoryPool.poolSize)
 
   // Max number of bytes worth of blocks to evict when unrolling
+  /*最大的展开内存=最大的存储内存*0.2*/
   private val maxUnrollMemory: Long = {
     (maxOnHeapStorageMemory * conf.getDouble("spark.storage.unrollFraction", 0.2)).toLong
   }
 
   override def maxOffHeapStorageMemory: Long = 0L
 
+  /*为blockId申请numBytes字节的内存*/
   override def acquireStorageMemory(
       blockId: BlockId,
       numBytes: Long,
@@ -106,11 +114,13 @@ private[spark] class StaticMemoryManager(
 
 private[spark] object StaticMemoryManager {
 
-  private val MIN_MEMORY_BYTES = 32 * 1024 * 1024
+  private val MIN_MEMORY_BYTES = 32 * 1024 * 1024 // 32M
 
   /**
    * Return the total amount of memory available for the storage region, in bytes.
+   * 返回总共可用于存储的内存（字节）
    */
+  // 运行时jvm可使用的最大内存 * 0.6 * 0.9
   private def getMaxStorageMemory(conf: SparkConf): Long = {
     val systemMaxMemory = conf.getLong("spark.testing.memory", Runtime.getRuntime.maxMemory)
     val memoryFraction = conf.getDouble("spark.storage.memoryFraction", 0.6)
@@ -120,15 +130,21 @@ private[spark] object StaticMemoryManager {
 
   /**
    * Return the total amount of memory available for the execution region, in bytes.
+   * 返回总共可用于计算的内存（字节）
+   * 运行时jvm可使用的最大内存 * 0.2 * 0.8
    */
   private def getMaxExecutionMemory(conf: SparkConf): Long = {
+    // 运行时jvm可使用的最大内存
     val systemMaxMemory = conf.getLong("spark.testing.memory", Runtime.getRuntime.maxMemory)
-
+    // 运行时jvm可使用的最大内存 不能小于 32M
     if (systemMaxMemory < MIN_MEMORY_BYTES) {
       throw new IllegalArgumentException(s"System memory $systemMaxMemory must " +
         s"be at least $MIN_MEMORY_BYTES. Please increase heap size using the --driver-memory " +
         s"option or spark.driver.memory in Spark configuration.")
+      /*否则，抛出异常（jvm系统可以使用内存最少是32M。请增加堆内存，通过使用--driver-memory选项或
+      spark配置文件中的spark.driver.memory）*/
     }
+    /*检查配置的spark.executor.memory是否不小于32M*/
     if (conf.contains("spark.executor.memory")) {
       val executorMemory = conf.getSizeAsBytes("spark.executor.memory")
       if (executorMemory < MIN_MEMORY_BYTES) {

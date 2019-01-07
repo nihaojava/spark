@@ -27,20 +27,24 @@ import org.apache.spark.util.Utils
 /**
  * :: DeveloperApi ::
  * This class represent an unique identifier for a BlockManager.
+ * BlockManager 的唯一标示
  *
  * The first 2 constructors of this class are made private to ensure that BlockManagerId objects
  * can be created only using the apply method in the companion object. This allows de-duplication
  * of ID objects. Also, constructor parameters are private to ensure that parameters cannot be
  * modified from outside this class.
+ * 前两个构造方法做成private是为了确保BlockManagerId只能使用伴生类中的apply方法来创建。
+ * 这样就没有重复的ID对象。构造参数也是private的，为了确保不能从此类以外修改参数。
  */
 @DeveloperApi
 class BlockManagerId private (
     private var executorId_ : String,
     private var host_ : String,
     private var port_ : Int,
-    private var topologyInfo_ : Option[String])
+    private var topologyInfo_ : Option[String]) // 拓扑信息
   extends Externalizable {
 
+  /*只用在反序列化的时候，需要一个无参构造函数*/
   private def this() = this(null, null, 0, None)  // For deserialization only
 
   def executorId: String = executorId_
@@ -68,6 +72,7 @@ class BlockManagerId private (
       executorId == SparkContext.LEGACY_DRIVER_IDENTIFIER
   }
 
+  // 将BlockManagerId的信息序列化后写到外部二进制流中
   override def writeExternal(out: ObjectOutput): Unit = Utils.tryOrIOException {
     out.writeUTF(executorId_)
     out.writeUTF(host_)
@@ -77,6 +82,7 @@ class BlockManagerId private (
     topologyInfo.foreach(out.writeUTF(_))
   }
 
+  // 从外部二进制流中读取BlockManagerId的所有信息
   override def readExternal(in: ObjectInput): Unit = Utils.tryOrIOException {
     executorId_ = in.readUTF()
     host_ = in.readUTF()
@@ -126,14 +132,17 @@ private[spark] object BlockManagerId {
       topologyInfo: Option[String] = None): BlockManagerId =
     getCachedBlockManagerId(new BlockManagerId(execId, host, port, topologyInfo))
 
+  /*应该是在streaming的时候用*/
   def apply(in: ObjectInput): BlockManagerId = {
     val obj = new BlockManagerId()
     obj.readExternal(in)
     getCachedBlockManagerId(obj)
   }
 
+  /*blockManagerId缓存*/
   val blockManagerIdCache = new ConcurrentHashMap[BlockManagerId, BlockManagerId]()
 
+  /*从缓存中查找*/
   def getCachedBlockManagerId(id: BlockManagerId): BlockManagerId = {
     blockManagerIdCache.putIfAbsent(id, id)
     blockManagerIdCache.get(id)

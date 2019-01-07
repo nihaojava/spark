@@ -91,7 +91,7 @@ class ShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
     Option(reflect.classTag[C]).map(_.runtimeClass.getName)
 
   val shuffleId: Int = _rdd.context.newShuffleId()
-
+  // 将此ShuffleDependency注册到shuffleManager
   val shuffleHandle: ShuffleHandle = _rdd.context.env.shuffleManager.registerShuffle(
     shuffleId, _rdd.partitions.length, this)
 

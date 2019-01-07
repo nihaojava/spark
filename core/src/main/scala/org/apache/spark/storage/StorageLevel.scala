@@ -30,6 +30,8 @@ import org.apache.spark.util.Utils
  * or ExternalBlockStore, whether to drop the RDD to disk if it falls out of memory or
  * ExternalBlockStore, whether to keep the data in memory in a serialized format, and whether
  * to replicate the RDD partitions on multiple nodes.
+ * 用于管理RDD的存储的标记。每个StorageLevel记录是否使用内存或者ExternalBlockStore。如果RDD从内存或ExternalBlockStore
+ * 中掉出来，是否会将RDD降级到磁盘。是否将数据以序列化格式保存在内存中，以及是否在多个节点上备份RDD的分区。
  *
  * The [[org.apache.spark.storage.StorageLevel]] singleton object contains some static constants
  * for commonly useful storage levels. To create your own storage level object, use the
@@ -37,18 +39,18 @@ import org.apache.spark.util.Utils
  */
 @DeveloperApi
 class StorageLevel private(
-    private var _useDisk: Boolean,
-    private var _useMemory: Boolean,
-    private var _useOffHeap: Boolean,
-    private var _deserialized: Boolean,
-    private var _replication: Int = 1)
+    private var _useDisk: Boolean,  // 是否使用磁盘
+    private var _useMemory: Boolean, // 是否使用堆内存
+    private var _useOffHeap: Boolean, // 是否使用堆外内存
+    private var _deserialized: Boolean, // 是否需要对block反序列化,对已经序列化的block起作用
+    private var _replication: Int = 1) // block的副本数，默认为1
   extends Externalizable {
 
   // TODO: Also add fields for caching priority, dataset ID, and flushing.
   private def this(flags: Int, replication: Int) {
     this((flags & 8) != 0, (flags & 4) != 0, (flags & 2) != 0, (flags & 1) != 0, replication)
   }
-
+  /*无参构造方法用于反序列化*/
   def this() = this(false, true, false, false)  // For deserialization
 
   def useDisk: Boolean = _useDisk
@@ -57,21 +59,24 @@ class StorageLevel private(
   def deserialized: Boolean = _deserialized
   def replication: Int = _replication
 
+  // 为计算哈希码，复制限制为小于40 ？
   assert(replication < 40, "Replication restricted to be less than 40 for calculating hash codes")
 
+  // 如果使用堆外内存，必须序列化
   if (useOffHeap) {
+    /*Off-heap存储级别不支持反序列化数据*/
     require(!deserialized, "Off-heap storage level does not support deserialized storage")
   }
-
+  // 内存模式，使用了堆外内存就是堆外
   private[spark] def memoryMode: MemoryMode = {
     if (useOffHeap) MemoryMode.OFF_HEAP
     else MemoryMode.ON_HEAP
   }
-
+  // clone当前StorageLevel
   override def clone(): StorageLevel = {
     new StorageLevel(useDisk, useMemory, useOffHeap, deserialized, replication)
   }
-
+  //
   override def equals(other: Any): Boolean = other match {
     case s: StorageLevel =>
       s.useDisk == useDisk &&
@@ -82,9 +87,9 @@ class StorageLevel private(
     case _ =>
       false
   }
-
+  // 【当前StorageLevel是否有效，只有使用了内存或磁盘并且副本数>0才有效】
   def isValid: Boolean = (useMemory || useDisk) && (replication > 0)
-
+  // 转换为整形表示
   def toInt: Int = {
     var ret = 0
     if (_useDisk) {
@@ -102,11 +107,12 @@ class StorageLevel private(
     ret
   }
 
+  // 将StorageLevel序列化输出到二进制流
   override def writeExternal(out: ObjectOutput): Unit = Utils.tryOrIOException {
     out.writeByte(toInt)
     out.writeByte(_replication)
   }
-
+  // 从外部二进制流中读取StorageLevel各个属性
   override def readExternal(in: ObjectInput): Unit = Utils.tryOrIOException {
     val flags = in.readByte()
     _useDisk = (flags & 8) != 0

@@ -67,7 +67,7 @@ private[spark] class LocalRDDCheckpointData[T: ClassTag](@transient private val 
 }
 
 private[spark] object LocalRDDCheckpointData {
-
+  /*LocalRDDCheckpoint的默认存储级别*/
   val DEFAULT_STORAGE_LEVEL = StorageLevel.MEMORY_AND_DISK
 
   /**
@@ -77,9 +77,12 @@ private[spark] object LocalRDDCheckpointData {
    * This guarantees that the RDD can be recomputed multiple times correctly as long as
    * executors do not fail. Otherwise, if the RDD is cached in memory only, for instance,
    * the checkpoint data will be lost if the relevant block is evicted from memory.
-   *
+   * 这保证了RDD可以被正确地重新计算多次，只要executors不会失败。否则，此RDD只被保存在memory，
+   * 对于实例，如果相关的块被从内存中驱逐出去，checkpoint的数据会丢失。
    * This method is idempotent.
+   * 此方法是幂等的。
    */
+  /*将传入的StorageLevel，增加useDisk = true，其他不变*/
   def transformStorageLevel(level: StorageLevel): StorageLevel = {
     StorageLevel(useDisk = true, level.useMemory, level.deserialized, level.replication)
   }

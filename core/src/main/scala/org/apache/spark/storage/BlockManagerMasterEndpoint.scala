@@ -34,7 +34,10 @@ import org.apache.spark.util.{ThreadUtils, Utils}
 /**
  * BlockManagerMasterEndpoint is an [[ThreadSafeRpcEndpoint]] on the master node to track statuses
  * of all slaves' block managers.
+ * 是一个ThreadSafeRpcEndpoint，在master节点上，来管理所有slave block managers 的状态
+ * 【从代码看，应该是在Driver上，Driver所在节点一定是master嘛？】
  */
+/*通过向BlockManagerSlaveEndpoint发送消息，来管理从节点的block manager*/
 private[spark]
 class BlockManagerMasterEndpoint(
     override val rpcEnv: RpcEnv,
@@ -44,17 +47,22 @@ class BlockManagerMasterEndpoint(
   extends ThreadSafeRpcEndpoint with Logging {
 
   // Mapping from block manager id to the block manager's information.
+  /*BlockManagerId 和 BlockManagerInfo 的映射关系*/
   private val blockManagerInfo = new mutable.HashMap[BlockManagerId, BlockManagerInfo]
 
   // Mapping from executor ID to block manager ID.
+  /*executor ID 和 BlockManagerId ID 的映射关系*/
   private val blockManagerIdByExecutor = new mutable.HashMap[String, BlockManagerId]
 
   // Mapping from block id to the set of block managers that have the block.
+  /*BlockId 与 存储此block的BlockManagerId*/
   private val blockLocations = new JHashMap[BlockId, mutable.HashSet[BlockManagerId]]
 
+  /*？*/
   private val askThreadPool = ThreadUtils.newDaemonCachedThreadPool("block-manager-ask-thread-pool")
   private implicit val askExecutionContext = ExecutionContext.fromExecutorService(askThreadPool)
 
+  /*集群所有节点的拓扑结构映射*/
   private val topologyMapper = {
     val topologyMapperClassName = conf.get(
       "spark.storage.replication.topologyMapper", classOf[DefaultTopologyMapper].getName)
@@ -66,7 +74,7 @@ class BlockManagerMasterEndpoint(
   }
 
   logInfo("BlockManagerMasterEndpoint up")
-
+  /*接收并回复BlockManagerMaster发送过来的消息*/
   override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
     case RegisterBlockManager(blockManagerId, maxMemSize, slaveEndpoint) =>
       context.reply(register(blockManagerId, maxMemSize, slaveEndpoint))
@@ -136,23 +144,30 @@ class BlockManagerMasterEndpoint(
         case None => context.reply(false)
       }
   }
-
+  /*步骤：1.先从Master中删除元数据 2.向slave节点发删除指令，返回异步结果，future*/
   private def removeRdd(rddId: Int): Future[Seq[Int]] = {
     // First remove the metadata for the given RDD, and then asynchronously remove the blocks
     // from the slaves.
+    /*首先删除给定RDD的元数据（blockManagerInfo），然后在异步的从salves节点删除block数据*/
 
     // Find all blocks for the given RDD, remove the block from both blockLocations and
     // the blockManagerInfo that is tracking the blocks.
+    /*找到此RDD的所有Blocks，从blockLocations 和 blockManagerInfo中删除*/
+    /*找到所有的block【iterator】*/
     val blocks = blockLocations.asScala.keys.flatMap(_.asRDDId).filter(_.rddId == rddId)
     blocks.foreach { blockId =>
+      /*获取blockid的BlockManagerId【Set】*/
       val bms: mutable.HashSet[BlockManagerId] = blockLocations.get(blockId)
+      /*遍历bms Set，得到相应的BlockManagerInfo,从它中删除此Block*/
       bms.foreach(bm => blockManagerInfo.get(bm).foreach(_.removeBlock(blockId)))
       blockLocations.remove(blockId)
     }
 
     // Ask the slaves to remove the RDD, and put the result in a sequence of Futures.
     // The dispatcher is used as an implicit argument into the Future sequence construction.
+    /*new一个消息RemoveRdd*/
     val removeMsg = RemoveRdd(rddId)
+    /*遍历BlockManagerInfo，向每个slaveEndpoint发送删除此RDD的消息，结果封装成Future，返回*/
     Future.sequence(
       blockManagerInfo.values.map { bm =>
         bm.slaveEndpoint.ask[Int](removeMsg)
@@ -228,6 +243,7 @@ class BlockManagerMasterEndpoint(
 
   // Remove a block from the slaves that have it. This can only be used to remove
   // blocks that the master knows about.
+  /*从含有此blockid的从节点中删除此block。只能删除master节点知道的*/
   private def removeBlockFromWorkers(blockId: BlockId) {
     val locations = blockLocations.get(blockId)
     if (locations != null) {
@@ -311,6 +327,7 @@ class BlockManagerMasterEndpoint(
 
   /**
    * Returns the BlockManagerId with topology information populated, if available.
+   * 返回 BlockManagerId，如果可用，会带有拓扑结构。
    */
   private def register(
       idWithoutTopologyInfo: BlockManagerId,
@@ -427,8 +444,10 @@ class BlockManagerMasterEndpoint(
   }
 }
 
+// 样例类BlockStatus用于封装Block的状态信息，此block的StorageLevel,使用内存大小，使用磁盘大小
 @DeveloperApi
 case class BlockStatus(storageLevel: StorageLevel, memSize: Long, diskSize: Long) {
+  // 是否存储到存储体系中
   def isCached: Boolean = memSize + diskSize > 0
 }
 
@@ -437,6 +456,8 @@ object BlockStatus {
   def empty: BlockStatus = BlockStatus(StorageLevel.NONE, memSize = 0L, diskSize = 0L)
 }
 
+/*用于记录BlockManager的信息。在BlockManagerMasterEndpoint中使用，每个BlockManager对应一个，
+构造的时候需要传入BlockManager对应的BlockManagerSlaveEndpointRef*/
 private[spark] class BlockManagerInfo(
     val blockManagerId: BlockManagerId,
     timeMs: Long,
@@ -444,13 +465,15 @@ private[spark] class BlockManagerInfo(
     val slaveEndpoint: RpcEndpointRef)
   extends Logging {
 
-  private var _lastSeenMs: Long = timeMs
-  private var _remainingMem: Long = maxMem
+  private var _lastSeenMs: Long = timeMs // 最后一次更新时间
+  private var _remainingMem: Long = maxMem   // 剩余内存
 
   // Mapping from block id to its status.
+  /*存储此blockManager里的BlockId  和 BlockStatus 映射关系*/
   private val _blocks = new JHashMap[BlockId, BlockStatus]
 
   // Cached blocks held by this BlockManager. This does not include broadcast blocks.
+  /*缓存此BlockManager 存储的blockId。 不包含broadcast blocks*/
   private val _cachedBlocks = new mutable.HashSet[BlockId]
 
   def getStatus(blockId: BlockId): Option[BlockStatus] = Option(_blocks.get(blockId))
@@ -519,7 +542,7 @@ private[spark] class BlockManagerInfo(
       }
     }
   }
-
+  /*从此BlockManagerInfo中删除此Block*/
   def removeBlock(blockId: BlockId) {
     if (_blocks.containsKey(blockId)) {
       _remainingMem += _blocks.get(blockId).memSize

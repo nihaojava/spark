@@ -27,16 +27,22 @@ import org.apache.spark.util.Utils
 /**
  * Result returned by a ShuffleMapTask to a scheduler. Includes the block manager address that the
  * task ran on as well as the sizes of outputs for each reducer, for passing on to the reduce tasks.
+ * ShuffleMapTask返回给调度器TaskScheduler的执行结果。包括了task运行的block manager的地址 和
+ * 为每个reducer 输出的文件的大小，用于传递给reduce task。
  */
 private[spark] sealed trait MapStatus {
   /** Location where this task was run. */
+  // task运行的位置，即所在节点的BlockManager的身份标识，BlockManagerId。
   def location: BlockManagerId
 
   /**
    * Estimated size for the reduce block, in bytes.
+   * 预测reduce需要拉取的block的大小，按Byte。
    *
    * If a block is non-empty, then this method MUST return a non-zero size.  This invariant is
    * necessary for correctness, since block fetchers are allowed to skip zero-size blocks.
+   * 如果一个block不为空，那么这个方法一定返回一个非0的大小。这个不变量必须是准确的，
+   * 因为block fetchers 将会跳过为0的block。
    */
   def getSizeForBlock(reduceId: Int): Long
 }
@@ -44,6 +50,8 @@ private[spark] sealed trait MapStatus {
 
 private[spark] object MapStatus {
 
+  // 如果未压缩的长度大于2000，使用HighlyCompressedMapStatus;否则使用CompressedMapStatus
+  // 说明对于较大数据量使用高压缩，一般数据量使用普通压缩
   def apply(loc: BlockManagerId, uncompressedSizes: Array[Long]): MapStatus = {
     if (uncompressedSizes.length > 2000) {
       HighlyCompressedMapStatus(loc, uncompressedSizes)

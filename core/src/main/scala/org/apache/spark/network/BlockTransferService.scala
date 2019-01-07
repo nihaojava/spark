@@ -30,6 +30,7 @@ import org.apache.spark.network.shuffle.{BlockFetchingListener, ShuffleClient}
 import org.apache.spark.storage.{BlockId, StorageLevel}
 import org.apache.spark.util.ThreadUtils
 
+/*block传输服务的抽象类，提供了两个具体的实现，一个用于测试，一个是标准的NettryBlockTransferService*/
 private[spark]
 abstract class BlockTransferService extends ShuffleClient with Closeable with Logging {
 

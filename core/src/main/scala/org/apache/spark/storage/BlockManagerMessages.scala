@@ -22,6 +22,7 @@ import java.io.{Externalizable, ObjectInput, ObjectOutput}
 import org.apache.spark.rpc.RpcEndpointRef
 import org.apache.spark.util.Utils
 
+/*定义了大量的消息体，BlockManagerMaster 和 BlockManagerSlave 之间交流的*/
 private[spark] object BlockManagerMessages {
   //////////////////////////////////////////////////////////////////////////////////
   // Messages from the master to slaves.

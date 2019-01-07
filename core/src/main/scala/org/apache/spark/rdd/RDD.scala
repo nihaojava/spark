@@ -188,10 +188,12 @@ abstract class RDD[T: ClassTag](
     if (storageLevel != StorageLevel.NONE && newLevel != storageLevel && !allowOverride) {
       throw new UnsupportedOperationException(
         "Cannot change storage level of an RDD after it was already assigned a level")
+      /*【抛出异常，现在不支持对已经有StorageLevel的RDD修改其StorageLevel】
+      * 【目前只能unpersist然后再persist 新的StorageLevel】*/
     }
     // If this is the first time this RDD is marked for persisting, register it
     // with the SparkContext for cleanups and accounting. Do this only once.
-    // 如果这是此RDD第一次标记为需要持久化，注册它到sparkContext，用于清理和合算。这种操作只进行一次。
+    // 如果这是此RDD第一次标记为需要持久化，注册它到sparkContext，用于清理和登记。这种操作只进行一次。
     if (storageLevel == StorageLevel.NONE) {
       // 用于清理
       sc.cleaner.foreach(_.registerRDDForCleanup(this))
@@ -206,11 +208,12 @@ abstract class RDD[T: ClassTag](
    * Set this RDD's storage level to persist its values across operations after the first time
    * it is computed. This can only be used to assign a new storage level if the RDD does not
    * have a storage level set yet. Local checkpointing is an exception.
-   * 设置此RDD的存储级别来持久化它的值，在此RDD在第一次计算的时候进行操作。
+   * 设置此RDD的存储级别来持久化它的内容，在此RDD在第一次计算的时候进行持久化操作。
    * 这只能用于分配一个新的存储级别，如果此RDD没有设置存储级别。
    * Local checkpointing 是一个例外。
    */
   def persist(newLevel: StorageLevel): this.type = {
+    /*是否在本地记录了检查点CheckPointed*/
     if (isLocallyCheckpointed) {
       // This means the user previously called localCheckpoint(), which should have already
       // marked this RDD for persisting. Here we should override the old storage level with
@@ -235,8 +238,9 @@ abstract class RDD[T: ClassTag](
 
   /**
    * Mark the RDD as non-persistent, and remove all blocks for it from memory and disk.
-   *
+   * 标记此RDD为non-persistent，并且删除存储在磁盘和内存中的所有Blocks数据。
    * @param blocking Whether to block until all blocks are deleted.
+   *                 删除操作有结果前（可能成功可能失败），是否阻塞等待
    * @return This RDD.
    */
   def unpersist(blocking: Boolean = true): this.type = {
@@ -1682,6 +1686,8 @@ abstract class RDD[T: ClassTag](
   /**
    * Return whether this RDD is marked for local checkpointing.
    * Exposed for testing.
+   * 返回此RDD是否在本地 Checkpointed。
+   * 用于测试
    */
   private[rdd] def isLocallyCheckpointed: Boolean = {
     checkpointData match {

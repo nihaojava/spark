@@ -26,18 +26,26 @@ import org.apache.spark.annotation.DeveloperApi
  * Identifies a particular Block of data, usually associated with a single file.
  * A Block can be uniquely identified by its filename, but each type of Block has a different
  * set of keys which produce its unique name.
+ * 标识一个特别的数据块，该数据块通常与一个单独的文件关联。
+ * 一个block可以由它的名字来唯一标识，每一种类型的block有一个不同的keys集合，用来生成唯一的名称。
  *
  * If your BlockId should be serializable, be sure to add it to the BlockId.apply() method.
+ * 如果你的blockId想要序列化，请确保将其添加到blocks .apply()方法中。
  */
 @DeveloperApi
 sealed abstract class BlockId {
   /** A globally unique identifier for this Block. Can be used for ser/de. */
+  // 一个全局唯一的名称。用来序列化和反序列化。
   def name: String
 
-  // convenience methods
+  // convenience methods 便捷方法
+  // 将当前BlockId转换为RDDBlockId，此方法用的挺多
   def asRDDId: Option[RDDBlockId] = if (isRDD) Some(asInstanceOf[RDDBlockId]) else None
+  // 当前blockid是否是RDDblockId
   def isRDD: Boolean = isInstanceOf[RDDBlockId]
+  // 当前blockid是否是ShuffleBlockId
   def isShuffle: Boolean = isInstanceOf[ShuffleBlockId]
+  // 当前blockid是否是BroadcastBlockId
   def isBroadcast: Boolean = isInstanceOf[BroadcastBlockId]
 
   override def toString: String = name
@@ -86,6 +94,7 @@ case class StreamBlockId(streamId: Int, uniqueId: Long) extends BlockId {
 }
 
 /** Id associated with temporary local data managed as blocks. Not serializable. */
+/* 创建一个block，用于管理临时的本地数据。不序列化*/
 private[spark] case class TempLocalBlockId(id: UUID) extends BlockId {
   override def name: String = "temp_local_" + id
 }
@@ -112,6 +121,7 @@ object BlockId {
   val TEST = "test_(.*)".r
 
   /** Converts a BlockId "name" String back into a BlockId. */
+  /*id 进行正则表达式匹配*/
   def apply(id: String): BlockId = id match {
     case RDD(rddId, splitIndex) =>
       RDDBlockId(rddId.toInt, splitIndex.toInt)

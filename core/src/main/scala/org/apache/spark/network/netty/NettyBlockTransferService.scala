@@ -38,6 +38,7 @@ import org.apache.spark.util.Utils
 
 /**
  * A BlockTransferService that uses Netty to fetch a set of blocks at time.
+ * 块传输服务，它使用Netty每次取一组块。
  */
 private[spark] class NettyBlockTransferService(
     conf: SparkConf,
@@ -58,17 +59,25 @@ private[spark] class NettyBlockTransferService(
   private[this] var clientFactory: TransportClientFactory = _
   private[this] var appId: String = _
 
+  /*只有在init方法被调用，即被初始化后才提供服务。
+  * BlockManager在初始化的时候，将被调用此方法*/
   override def init(blockDataManager: BlockDataManager): Unit = {
+    /*创建NettyBlockRpcServer*/
     val rpcHandler = new NettyBlockRpcServer(conf.getAppId, serializer, blockDataManager)
+    /*创建客户端引导程序 和 服务端引导程序*/
     var serverBootstrap: Option[TransportServerBootstrap] = None
     var clientBootstrap: Option[TransportClientBootstrap] = None
     if (authEnabled) {
       serverBootstrap = Some(new AuthServerBootstrap(transportConf, securityManager))
       clientBootstrap = Some(new AuthClientBootstrap(transportConf, conf.getAppId, securityManager))
     }
+    /*创建transportContext*/
     transportContext = new TransportContext(transportConf, rpcHandler)
+    /*创建传输客户端工厂clientFactory*/
     clientFactory = transportContext.createClientFactory(clientBootstrap.toSeq.asJava)
+    /*创建TransportServer*/
     server = createServer(serverBootstrap.toList)
+    /*获取当前应用ID*/
     appId = conf.getAppId
     logInfo(s"Server created on ${hostName}:${server.getPort}")
   }

@@ -113,6 +113,7 @@ private[spark] object ShutdownHookManager extends Logging {
    * Detect whether this thread might be executing a shutdown hook. Will always return true if
    * the current thread is a running a shutdown hook but may spuriously return true otherwise (e.g.
    * if System.exit was just called by a concurrent thread).
+   * 检测该线程是否正在执行关闭钩子。
    *
    * Currently, this detects whether the JVM is shutting down by Runtime#addShutdownHook throwing
    * an IllegalStateException.
@@ -145,7 +146,7 @@ private[spark] object ShutdownHookManager extends Logging {
   /**
    * Adds a shutdown hook with the given priority. Hooks with lower priority values run
    * first.
-   *
+   * 按照给定的优先级添加a shutdown hook。先运行优先级低的钩子。
    * @param hook The code to run during shutdown.
    * @return A handle that can be used to unregister the shutdown hook.
    */
@@ -166,7 +167,7 @@ private[spark] object ShutdownHookManager extends Logging {
 }
 
 private [util] class SparkShutdownHookManager {
-
+  // SparkShutdownHook的优先级队列,存放了各种钩子
   private val hooks = new PriorityQueue[SparkShutdownHook]()
   @volatile private var shuttingDown = false
 

@@ -32,6 +32,7 @@ import org.apache.spark.shuffle.ShuffleWriter
 /**
  * A ShuffleMapTask divides the elements of an RDD into multiple buckets (based on a partitioner
  * specified in the ShuffleDependency).
+ * 一个ShuffleMapTask 将RDD的数据 划分到多个桶（根据在ShuffleDependency中指定的partitioner）
  *
  * See [[org.apache.spark.scheduler.Task]] for more information.
  *

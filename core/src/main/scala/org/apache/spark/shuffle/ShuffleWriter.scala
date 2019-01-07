@@ -23,12 +23,16 @@ import org.apache.spark.scheduler.MapStatus
 
 /**
  * Obtained inside a map task to write out records to the shuffle system.
+ * 定义了将map任务的中间结果输出到磁盘上的功能规范，
+ * 包括将数据写入磁盘和关闭ShuffleWriter。
  */
 private[spark] abstract class ShuffleWriter[K, V] {
   /** Write a sequence of records to this task's output */
+  // 写一个记录序列到此task的输出
   @throws[IOException]
   def write(records: Iterator[Product2[K, V]]): Unit
 
   /** Close this writer, passing along whether the map completed */
+  // 关闭writer,根据传递的参数map是否执行完成
   def stop(success: Boolean): Option[MapStatus]
 }

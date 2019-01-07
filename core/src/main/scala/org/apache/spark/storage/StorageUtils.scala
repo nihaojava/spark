@@ -247,6 +247,7 @@ private[spark] object StorageUtils extends Logging {
     if (buffer != null && buffer.isInstanceOf[MappedByteBuffer]) {
       logTrace(s"Unmapping $buffer")
       if (buffer.asInstanceOf[DirectBuffer].cleaner() != null) {
+        /*调用buffer的cleaner，手动clean*/
         buffer.asInstanceOf[DirectBuffer].cleaner().clean()
       }
     }

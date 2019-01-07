@@ -130,6 +130,7 @@ private[spark] trait Logging {
       if (isInterpreter) {
         // Use the repl's main class to define the default log level when running the shell,
         // overriding the root logger's config if they're different.
+        /*spark-shell 的默认日志级别*/
         val rootLogger = LogManager.getRootLogger()
         val replLogger = LogManager.getLogger(logName)
         val replLevel = Option(replLogger.getLevel()).getOrElse(Level.WARN)

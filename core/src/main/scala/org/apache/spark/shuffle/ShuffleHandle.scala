@@ -21,6 +21,8 @@ import org.apache.spark.annotation.DeveloperApi
 
 /**
  * An opaque handle to a shuffle, used by a ShuffleManager to pass information about it to tasks.
+ * 不透明的shuffle句柄，ShuffleManager使用它向Task传递shuffle信息。
+ * sortShuffleWriter依赖于ShuffleHandle的实现，先分析ShuffleHandle
  *
  * @param shuffleId ID of the shuffle
  */

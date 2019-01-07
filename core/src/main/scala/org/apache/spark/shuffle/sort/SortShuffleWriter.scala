@@ -25,6 +25,10 @@ import org.apache.spark.storage.ShuffleBlockId
 import org.apache.spark.util.Utils
 import org.apache.spark.util.collection.ExternalSorter
 
+/* ShuffleWriter的实现之一，提供了对Shuffle数据的排序功能。
+*  使用ExternalSorter作为排序器，由于ExternalSorter底层使用了PartitionedAppendOnlyMap和PartitionedPairBuffer
+*  两种缓存，因此sortShuffleWriter还支持对Shuffle数据的聚合功能。
+*/
 private[spark] class SortShuffleWriter[K, V, C](
     shuffleBlockResolver: IndexShuffleBlockResolver,
     handle: BaseShuffleHandle[K, V, C],
@@ -32,6 +36,7 @@ private[spark] class SortShuffleWriter[K, V, C](
     context: TaskContext)
   extends ShuffleWriter[K, V] with Logging {
 
+  // ShuffleDependency
   private val dep = handle.dependency
 
   private val blockManager = SparkEnv.get.blockManager
@@ -41,14 +46,19 @@ private[spark] class SortShuffleWriter[K, V, C](
   // Are we in the process of stopping? Because map tasks can call stop() with success = true
   // and then call stop() with success = false if they get an exception, we want to make sure
   // we don't try deleting files, etc twice.
+  // 我们正在停止吗？
   private var stopping = false
 
   private var mapStatus: MapStatus = null
 
   private val writeMetrics = context.taskMetrics().shuffleWriteMetrics
 
-  /** Write a bunch of records to this task's output */
+  /** Write a bunch of records to this task's output
+    * 写一批此task的输出数据
+    *
+    * */
   override def write(records: Iterator[Product2[K, V]]): Unit = {
+    // 创建ExternalSorter
     sorter = if (dep.mapSideCombine) {
       require(dep.aggregator.isDefined, "Map-side combine without Aggregator specified!")
       new ExternalSorter[K, V, C](
@@ -60,6 +70,7 @@ private[spark] class SortShuffleWriter[K, V, C](
       new ExternalSorter[K, V, V](
         context, aggregator = None, Some(dep.partitioner), ordering = None, dep.serializer)
     }
+    // 将map任务的输出记录插入到缓存中
     sorter.insertAll(records)
 
     // Don't bother including the time to open the merged output file in the shuffle write time,

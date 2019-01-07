@@ -47,27 +47,29 @@ import org.apache.spark.util.io.ChunkedByteBuffer
 
 
 /* Class for returning a fetched block and associated metrics. */
+// BlockResult用于封装从本地的BlockManager中获取的block数据 及 与block相关的度量数据。
 private[spark] class BlockResult(
-    val data: Iterator[Any],
-    val readMethod: DataReadMethod.Value,
-    val bytes: Long)
+    val data: Iterator[Any],  // block数据 及 与block相关的度量数据
+    val readMethod: DataReadMethod.Value, // 读取block的方法
+    val bytes: Long) //读取的block字节长度
 
 /**
  * Manager running on every node (driver and executors) which provides interfaces for putting and
  * retrieving blocks both locally and remotely into various stores (memory, disk, and off-heap).
- *
+ * BlockManager运行在每一个节点（driver 和 executors），它提供了对本地或远端节点上block的上传和下载接口。
  * Note that [[initialize()]] must be called before the BlockManager is usable.
+ * 注意：initialize 方法一定在BlockManager可用前被调用
  */
 private[spark] class BlockManager(
     executorId: String,
     rpcEnv: RpcEnv,
-    val master: BlockManagerMaster,
+    val master: BlockManagerMaster, //  BlockManagerMaster
     val serializerManager: SerializerManager,
     val conf: SparkConf,
     memoryManager: MemoryManager,
     mapOutputTracker: MapOutputTracker,
     shuffleManager: ShuffleManager,
-    val blockTransferService: BlockTransferService,
+    val blockTransferService: BlockTransferService, // block传输服务
     securityManager: SecurityManager,
     numUsableCores: Int)
   extends BlockDataManager with BlockEvictionHandler with Logging {
@@ -123,6 +125,9 @@ private[spark] class BlockManager(
 
   // Client to read other executors' shuffle files. This is either an external service, or just the
   // standard BlockTransferService to directly connect to other Executors.
+  /*读取其他executors shuffle map的文件。
+  可以是一个外部的服务，也可以是标准的BlockTransferService直接连接其他的Executors。
+  默认是NettyBlockTransferService*/
   private[spark] val shuffleClient = if (externalShuffleServiceEnabled) {
     val transConf = SparkTransportConf.fromSparkConf(conf, "shuffle", numUsableCores)
     new ExternalShuffleClient(transConf, securityManager, securityManager.isAuthenticationEnabled())
@@ -134,6 +139,7 @@ private[spark] class BlockManager(
   private val maxFailuresBeforeLocationRefresh =
     conf.getInt("spark.block.failures.beforeLocationRefresh", 5)
 
+  /*创建BlockManagerSlaveEndpoint，slaveEndpoint持有BlockManagerSlaveEndpoint的RpcEndpointRef*/
   private val slaveEndpoint = rpcEnv.setupEndpoint(
     "BlockManagerEndpoint" + BlockManager.ID_GENERATOR.next,
     new BlockManagerSlaveEndpoint(rpcEnv, this, mapOutputTracker))
@@ -160,28 +166,36 @@ private[spark] class BlockManager(
    * service if configured.
    */
   def initialize(appId: String): Unit = {
-    blockTransferService.init(this)
-    shuffleClient.init(appId)
+    blockTransferService.init(this) //初始化BlockTransferService
+    shuffleClient.init(appId) // 初始化shuffleClient
 
+    /*设置block的复制策略*/
     blockReplicationPolicy = {
+      /*复制策略class的name*/
       val priorityClass = conf.get(
         "spark.storage.replication.policy", classOf[RandomBlockReplicationPolicy].getName)
+      /*加载priorityClass*/
       val clazz = Utils.classForName(priorityClass)
+      /*创建实例*/
       val ret = clazz.newInstance.asInstanceOf[BlockReplicationPolicy]
       logInfo(s"Using $priorityClass for block replication policy")
       ret
     }
 
+    /*生成当前BlockManager的BlockManagerId*/
     val id =
       BlockManagerId(executorId, blockTransferService.hostName, blockTransferService.port, None)
-
+    /*向master注册返回的id*/
     val idFromMaster = master.registerBlockManager(
       id,
       maxMemory,
       slaveEndpoint)
 
+    /*正式的blockManagerId，优先取idFromMaster，为null的话，再取id*/
     blockManagerId = if (idFromMaster != null) idFromMaster else id
 
+    /*生成shuffleServerId。当启用了外部Shuffle服务时将新建一个BlockManagerId作为shuffleServerId，
+    * 否则使用blockManager自身的id*/
     shuffleServerId = if (externalShuffleServiceEnabled) {
       logInfo(s"external shuffle service port = $externalShuffleServicePort")
       BlockManagerId(executorId, blockTransferService.hostName, externalShuffleServicePort)
@@ -190,6 +204,7 @@ private[spark] class BlockManager(
     }
 
     // Register Executors' configuration with the local shuffle service, if one should exist.
+    /*启用了外部Shuffle服务，并且当前blockManager所在节点不是Driver时，需要注册外部的Shuffle服务*/
     if (externalShuffleServiceEnabled && !blockManagerId.isDriver) {
       registerWithExternalShuffleServer()
     }
@@ -252,6 +267,7 @@ private[spark] class BlockManager(
    *
    * Note that this method must be called without any BlockInfo locks held.
    */
+  /*此方法用于向blockManagerMaster重新注册BlockManager，并向blockManagerMaster报告所有的Block信息。*/
   def reregister(): Unit = {
     // TODO: We might need to rate limit re-registering.
     logInfo(s"BlockManager $blockManagerId re-registering with master")
@@ -295,6 +311,7 @@ private[spark] class BlockManager(
   /**
    * Interface to get local block data. Throws an exception if the block cannot be found or
    * cannot be read successfully.
+   * 获取本地block数据的接口。如果找不到此block或者不能被成功读取，则抛出异常。
    */
   override def getBlockData(blockId: BlockId): ManagedBuffer = {
     if (blockId.isShuffle) {
@@ -314,6 +331,7 @@ private[spark] class BlockManager(
 
   /**
    * Put the block locally, using the given storage level.
+   * 将block写入本地，使用给定的存储级别
    */
   override def putBlockData(
       blockId: BlockId,
@@ -326,6 +344,8 @@ private[spark] class BlockManager(
   /**
    * Get the BlockStatus for the block identified by the given ID, if it exists.
    * NOTE: This is mainly for testing.
+   * 获取blockid的状态
+   * 主要用于测试
    */
   def getStatus(blockId: BlockId): Option[BlockStatus] = {
     blockInfoManager.get(blockId).map { info =>
@@ -340,6 +360,7 @@ private[spark] class BlockManager(
    * query the blocks stored in the disk block manager (that the block manager
    * may not know of).
    */
+  /*获取匹配过滤器条件的blockId的序列*/
   def getMatchingBlockIds(filter: BlockId => Boolean): Seq[BlockId] = {
     // The `toArray` is necessary here in order to force the list to be materialized so that we
     // don't try to serialize a lazy iterator when responding to client requests.
@@ -353,6 +374,8 @@ private[spark] class BlockManager(
    * Tell the master about the current storage status of a block. This will send a block update
    * message reflecting the current status, *not* the desired storage level in its block info.
    * For example, a block with MEMORY_AND_DISK set might have fallen out to be only on disk.
+   * 向master报告此block的当前存储状态。它将发送一个block更新消息，是当前的storate level，而不是期望的。
+   * 例如，MEMORY_AND_DISK集合的块可能只位于磁盘上。
    *
    * droppedMemorySize exists to account for when the block is dropped from memory to disk (so
    * it is still valid). This ensures that update in master will compensate for the increase in
@@ -375,6 +398,8 @@ private[spark] class BlockManager(
    * Actually send a UpdateBlockInfo message. Returns the master's response,
    * which will be true if the block was successfully recorded and false if
    * the slave needs to re-register.
+   * 实际发送一个UpdateBlockInfo消息。返回master的相应，如果此block被成功记录返回true，
+   * 如果从节点需要重新注册返回false。
    */
   private def tryToReportBlockStatus(
       blockId: BlockId,
@@ -437,6 +462,7 @@ private[spark] class BlockManager(
 
   /**
    * Get block from local block manager as an iterator of Java objects.
+   * 从本地block manager中获取block数据。
    */
   def getLocalValues(blockId: BlockId): Option[BlockResult] = {
     logDebug(s"Getting local block $blockId")
@@ -481,6 +507,7 @@ private[spark] class BlockManager(
 
   /**
    * Get block from the local block manager as serialized bytes.
+   * 从存储体系获取BlockId所对应Block数据，并封装为ChunkedByteBuffer
    */
   def getLocalBytes(blockId: BlockId): Option[ChunkedByteBuffer] = {
     logDebug(s"Getting local block $blockId as bytes")
@@ -538,8 +565,9 @@ private[spark] class BlockManager(
 
   /**
    * Get block from remote block managers.
-   *
+   * 从远端blockManager获取block。
    * This does not acquire a lock on this block in this JVM.
+   * 这样不会获取此block的锁，在此jvm上。
    */
   private def getRemoteValues[T: ClassTag](blockId: BlockId): Option[BlockResult] = {
     val ct = implicitly[ClassTag[T]]
@@ -562,6 +590,7 @@ private[spark] class BlockManager(
 
   /**
    * Get block from remote block managers as serialized bytes.
+   * 从远端的block manager以序列化的字节形式获取block数据
    */
   def getRemoteBytes(blockId: BlockId): Option[ChunkedByteBuffer] = {
     logDebug(s"Getting remote block $blockId")
@@ -620,11 +649,12 @@ private[spark] class BlockManager(
 
   /**
    * Get a block from the block manager (either local or remote).
-   *
+   * 从block manager中获取一个block（本地 或者 远端）
    * This acquires a read lock on the block if the block was stored locally and does not acquire
    * any locks if the block was fetched from a remote block manager. The read lock will
    * automatically be freed once the result's `data` iterator is fully consumed.
    */
+  /*优先从本地获取block数据，当本地获取不到所需的block数据，再从远端获取block数据*/
   def get[T: ClassTag](blockId: BlockId): Option[BlockResult] = {
     val local = getLocalValues(blockId)
     if (local.isDefined) {
@@ -641,6 +671,7 @@ private[spark] class BlockManager(
 
   /**
    * Downgrades an exclusive write lock to a shared read lock.
+   * 写锁降级为读锁
    */
   def downgradeLock(blockId: BlockId): Unit = {
     blockInfoManager.downgradeLock(blockId)
@@ -648,6 +679,7 @@ private[spark] class BlockManager(
 
   /**
    * Release a lock on the given block.
+   * 释放持有的block的锁
    */
   def releaseLock(blockId: BlockId): Unit = {
     blockInfoManager.unlock(blockId)
@@ -655,14 +687,16 @@ private[spark] class BlockManager(
 
   /**
    * Registers a task with the BlockManager in order to initialize per-task bookkeeping structures.
+   * 注册一个task到BlockManager，为了初始化每个任务的记账结构
    */
+  /*将任务尝试线程注册到blockInfoManager*/
   def registerTask(taskAttemptId: Long): Unit = {
     blockInfoManager.registerTask(taskAttemptId)
   }
 
   /**
    * Release all locks for the given task.
-   *
+   * 释放给定task的所有锁
    * @return the blocks whose locks were released.
    */
   def releaseAllLocksForTask(taskAttemptId: Long): Seq[BlockId] = {
@@ -676,6 +710,8 @@ private[spark] class BlockManager(
    * @return either a BlockResult if the block was successfully cached, or an iterator if the block
    *         could not be cached.
    */
+  /*获取block。如果block存在，则获取此block并返回BlockResult，否则调用makeIterator方法计算block，
+  * 并持久化后返回BlockResult或Iterator*/
   def getOrElseUpdate[T](
       blockId: BlockId,
       level: StorageLevel,
@@ -716,6 +752,7 @@ private[spark] class BlockManager(
   /**
    * @return true if the block was stored or false if an error occurred.
    */
+  /*将block数据写入存储体系*/
   def putIterator[T: ClassTag](
       blockId: BlockId,
       values: Iterator[T],
@@ -737,7 +774,10 @@ private[spark] class BlockManager(
    * A short circuited method to get a block writer that can write data directly to disk.
    * The Block will be appended to the File specified by filename. Callers should handle error
    * cases.
+   * 一种获取block writer的捷径方法，它可以直接将数据写到磁盘。
+   * 此block将被追加到指定的文件中。
    */
+  /*创建并获取DiskBlockObjectWriter，通过它可以跳过对DiskStore的使用，直接将数据写入磁盘*/
   def getDiskWriter(
       blockId: BlockId,
       file: File,
@@ -751,9 +791,10 @@ private[spark] class BlockManager(
 
   /**
    * Put a new block of serialized bytes to the block manager.
-   *
+   * 将一个新的block的序列化字节块放到块管理器中。
    * @return true if the block was stored or false if an error occurred.
    */
+  /*用于写入block数据*/
   def putBytes[T: ClassTag](
       blockId: BlockId,
       bytes: ChunkedByteBuffer,
@@ -774,6 +815,7 @@ private[spark] class BlockManager(
    *                     returns.
    * @return true if the block was already present or if the put succeeded, false otherwise.
    */
+  /*用于执行block的写入*/
   private def doPutBytes[T](
       blockId: BlockId,
       bytes: ChunkedByteBuffer,
@@ -1213,6 +1255,7 @@ private[spark] class BlockManager(
 
   /**
    * Read a block consisting of a single object.
+   * 读取一个由单个对象组成的block
    */
   def getSingle[T: ClassTag](blockId: BlockId): Option[T] = {
     get[T](blockId).map(_.data.next().asInstanceOf[T])
@@ -1220,7 +1263,7 @@ private[spark] class BlockManager(
 
   /**
    * Write a block consisting of a single object.
-   *
+   * 写一个由单个对象组成的block
    * @return true if the block was stored or false if the block was already stored or an
    *         error occurred.
    */
@@ -1243,6 +1286,8 @@ private[spark] class BlockManager(
    *
    * @return the block's new effective StorageLevel.
    */
+  /*从内存中删除block，当block的存储级别允许写入磁盘，block将被写入磁盘。
+  * 此方法主要在内存不足，需要从内存腾出空闲空间时使用*/
   private[storage] override def dropFromMemory[T: ClassTag](
       blockId: BlockId,
       data: () => Either[Array[T], ChunkedByteBuffer]): StorageLevel = {
@@ -1290,19 +1335,24 @@ private[spark] class BlockManager(
 
   /**
    * Remove all blocks belonging to the given RDD.
-   *
+   * 删除此RDD的所有block
    * @return The number of blocks removed.
+   *         返回删除的block个数
    */
   def removeRdd(rddId: Int): Int = {
     // TODO: Avoid a linear scan by creating another mapping of RDD.id to blocks.
     logInfo(s"Removing RDD $rddId")
+    /*帅选出此RDD的block列表，也就是要删除的block列表*/
     val blocksToRemove = blockInfoManager.entries.flatMap(_._1.asRDDId).filter(_.rddId == rddId)
+    /*遍历，一个一个删除*/
     blocksToRemove.foreach { blockId => removeBlock(blockId, tellMaster = false) }
+    /*返回删除的block个数*/
     blocksToRemove.size
   }
 
   /**
    * Remove all blocks belonging to the given broadcast.
+   * 删除此broadcastId的所有block
    */
   def removeBroadcast(broadcastId: Long, tellMaster: Boolean): Int = {
     logDebug(s"Removing broadcast $broadcastId")
@@ -1315,14 +1365,17 @@ private[spark] class BlockManager(
 
   /**
    * Remove a block from both memory and disk.
+   * 删除一个block从内存和磁盘
    */
   def removeBlock(blockId: BlockId, tellMaster: Boolean = true): Unit = {
     logDebug(s"Removing block $blockId")
+    /*先获取要删除Block的锁，如果此block的读或写锁被其他task获取了，阻塞等待*/
     blockInfoManager.lockForWriting(blockId) match {
       case None =>
         // The block has already been removed; do nothing.
         logWarning(s"Asked to remove block $blockId, which does not exist")
       case Some(info) =>
+        /*删除Block*/
         removeBlockInternal(blockId, tellMaster = tellMaster && info.tellMaster)
         addUpdatedBlockStatusToTaskMetrics(blockId, BlockStatus.empty)
     }
@@ -1331,16 +1384,20 @@ private[spark] class BlockManager(
   /**
    * Internal version of [[removeBlock()]] which assumes that the caller already holds a write
    * lock on the block.
+   * removeBlock的内部版，它假定调用者已经持有了此block的写锁。
+   * 执行完删除操作后，向master报告Block状态
    */
   private def removeBlockInternal(blockId: BlockId, tellMaster: Boolean): Unit = {
     // Removals are idempotent in disk store and memory store. At worst, we get a warning.
+    // 从磁盘和内存中删除此Block
     val removedFromMemory = memoryStore.remove(blockId)
     val removedFromDisk = diskStore.remove(blockId)
     if (!removedFromMemory && !removedFromDisk) {
       logWarning(s"Block $blockId could not be removed as it was not found on disk or in memory")
     }
+    /*删除此blockId对应的BlockInfo*/
     blockInfoManager.removeBlock(blockId)
-    if (tellMaster) {
+    if (tellMaster) {/*向master报告此block状态*/
       reportBlockStatus(blockId, BlockStatus.empty)
     }
   }
@@ -1368,6 +1425,7 @@ private[spark] class BlockManager(
 
 
 private[spark] object BlockManager {
+  /*ID生成器*/
   private val ID_GENERATOR = new IdGenerator
 
   def blockIdsToHosts(

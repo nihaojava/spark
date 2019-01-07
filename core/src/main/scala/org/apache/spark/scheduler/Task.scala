@@ -34,6 +34,7 @@ import org.apache.spark.util._
 
 /**
  * A unit of execution. We have two kinds of Task's in Spark:
+ * 一个执行单位。在spark中有两类，ShuffleMapTask和ResultTask
  *
  *  - [[org.apache.spark.scheduler.ShuffleMapTask]]
  *  - [[org.apache.spark.scheduler.ResultTask]]
@@ -42,6 +43,9 @@ import org.apache.spark.util._
  * ResultTasks, while earlier stages consist of ShuffleMapTasks. A ResultTask executes the task
  * and sends the task output back to the driver application. A ShuffleMapTask executes the task
  * and divides the task output to multiple buckets (based on the task's partitioner).
+ * 一个spark job 包含一个或多个stages。最后一个job的stage包含多个ResultTasks，前面的stages包含多个ShuffleMapTasks。
+ * 执行一个ResultTask并且将task输出结果发送回driver应用程序。执行一个ShuffleMapTask并且将task输出
+ * 划分到多个桶（根据task的分区器）
  *
  * @param stageId id of the stage this task belongs to
  * @param stageAttemptId attempt id of the stage this task belongs to
@@ -142,6 +146,7 @@ private[spark] abstract class Task[T](
     }
   }
 
+  // task内存管理器
   private var taskMemoryManager: TaskMemoryManager = _
 
   def setTaskMemoryManager(taskMemoryManager: TaskMemoryManager): Unit = {
@@ -153,6 +158,7 @@ private[spark] abstract class Task[T](
   def preferredLocations: Seq[TaskLocation] = Nil
 
   // Map output tracker epoch. Will be set by TaskScheduler.
+  // MapOutputTracker跟踪的纪元。由TaskScheduler设置，用于故障迁移。
   var epoch: Long = -1
 
   // Task context, to be initialized in run().

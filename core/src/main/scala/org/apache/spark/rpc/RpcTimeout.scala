@@ -65,7 +65,7 @@ private[spark] class RpcTimeout(val duration: FiniteDuration, val timeoutProp: S
   /**
    * Wait for the completed result and return it. If the result is not available within this
    * timeout, throw a [[RpcTimeoutException]] to indicate which configuration controls the timeout.
-   *
+   *  等待执行完成并返回结果。如果在timeout时间内，没有返回结果，抛出timeout异常。
    * @param  future  the `Future` to be awaited
    * @throws RpcTimeoutException if after waiting for the specified time `future`
    *         is still not ready

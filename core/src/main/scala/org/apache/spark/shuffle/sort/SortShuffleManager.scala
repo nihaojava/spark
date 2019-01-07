@@ -206,6 +206,7 @@ private[spark] object SortShuffleManager extends Logging {
 /**
  * Subclass of [[BaseShuffleHandle]], used to identify when we've chosen to use the
  * serialized shuffle.
+ * BaseShuffleHandle 的子类，用于确定何时我们选择使用serialized shuffle。
  */
 private[spark] class SerializedShuffleHandle[K, V](
   shuffleId: Int,
@@ -217,6 +218,7 @@ private[spark] class SerializedShuffleHandle[K, V](
 /**
  * Subclass of [[BaseShuffleHandle]], used to identify when we've chosen to use the
  * bypass merge sort shuffle path.
+ * BaseShuffleHandle 的子类，用于确定何时我们选择使用bypass merge sort shuffle路径。
  */
 private[spark] class BypassMergeSortShuffleHandle[K, V](
   shuffleId: Int,

@@ -1786,7 +1786,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
   /**
    * Register an RDD to be persisted in memory and/or disk storage
-   * 注册一个RDD将被持久化到 内存 或 磁盘。
+   * 注册一个RDD，它将被持久化到 内存 或 磁盘。
    */
   private[spark] def persistRDD(rdd: RDD[_]) {
     // 存入persistentRdds Map

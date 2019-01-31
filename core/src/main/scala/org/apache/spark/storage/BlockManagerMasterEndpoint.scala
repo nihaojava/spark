@@ -418,9 +418,13 @@ class BlockManagerMasterEndpoint(
   }
 
   /** Get the list of the peers of the given block manager */
+  /*获取给定block manager同等的*/
   private def getPeers(blockManagerId: BlockManagerId): Seq[BlockManagerId] = {
+    /*获取所有的blockManagerId*/
     val blockManagerIds = blockManagerInfo.keySet
+    /*如果传递过来的blockManagerId在blockManagerIds中，继续执行*/
     if (blockManagerIds.contains(blockManagerId)) {
+      /*过滤掉Driver上的 和 传过来的blockManagerId*/
       blockManagerIds.filterNot { _.isDriver }.filterNot { _ == blockManagerId }.toSeq
     } else {
       Seq.empty

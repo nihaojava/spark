@@ -27,11 +27,13 @@ import org.apache.spark.util.Utils
 private[spark] class YarnScheduler(sc: SparkContext) extends TaskSchedulerImpl(sc) {
 
   // RackResolver logs an INFO message whenever it resolves a rack, which is way too often.
+  /*RackResolver在解析机架时记录信息消息，这种情况太常见了。*/
   if (Logger.getLogger(classOf[RackResolver]).getLevel == null) {
     Logger.getLogger(classOf[RackResolver]).setLevel(Level.WARN)
   }
 
   // By default, rack is unknown
+  /*默认机架rack，为None*/
   override def getRackForHost(hostPort: String): Option[String] = {
     val host = Utils.parseHostPort(hostPort)._1
     Option(RackResolver.resolve(sc.hadoopConfiguration, host).getNetworkLocation)

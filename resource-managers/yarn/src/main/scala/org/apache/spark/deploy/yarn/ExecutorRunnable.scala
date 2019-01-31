@@ -83,6 +83,7 @@ private[yarn] class ExecutorRunnable(
     |===============================================================================""".stripMargin
   }
 
+  /*启动Container*/
   def startContainer(): java.util.Map[String, ByteBuffer] = {
     val ctx = Records.newRecord(classOf[ContainerLaunchContext])
       .asInstanceOf[ContainerLaunchContext]
@@ -127,7 +128,7 @@ private[yarn] class ExecutorRunnable(
           s" on host $hostname", ex)
     }
   }
-
+  /*构造启动CoarseGrainedExecutorBackend的命令*/
   private def prepareCommand(): List[String] = {
     // Extra options for the JVM
     val javaOpts = ListBuffer[String]()

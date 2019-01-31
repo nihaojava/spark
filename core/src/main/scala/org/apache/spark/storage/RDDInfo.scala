@@ -28,15 +28,16 @@ class RDDInfo(
     val numPartitions: Int,
     var storageLevel: StorageLevel,
     val parentIds: Seq[Int],
-    val callSite: String = "",
+    val callSite: String = "",  /*RDD的用户调用栈信息*/
     val scope: Option[RDDOperationScope] = None)
   extends Ordered[RDDInfo] {
 
-  var numCachedPartitions = 0
-  var memSize = 0L
-  var diskSize = 0L
-  var externalBlockStoreSize = 0L
+  var numCachedPartitions = 0 /*缓存的分区个数*/
+  var memSize = 0L  /*使用的内存大小*/
+  var diskSize = 0L /*使用的磁盘大小*/
+  var externalBlockStoreSize = 0L /*Block存储在外部的大小*/
 
+  /*是否已经缓存了*/
   def isCached: Boolean = (memSize + diskSize > 0) && numCachedPartitions > 0
 
   override def toString: String = {
@@ -52,10 +53,14 @@ class RDDInfo(
   }
 }
 
+/*根据rdd构造一个RDDInfo*/
 private[spark] object RDDInfo {
   def fromRdd(rdd: RDD[_]): RDDInfo = {
+    /*rdd名称，如果没有为rdd的simple类名*/
     val rddName = Option(rdd.name).getOrElse(Utils.getFormattedClassName(rdd))
+    /*父rdd的Ids*/
     val parentIds = rdd.dependencies.map(_.rdd.id)
+    /*new一个RDDInfo*/
     new RDDInfo(rdd.id, rddName, rdd.partitions.length,
       rdd.getStorageLevel, parentIds, rdd.creationSite.shortForm, rdd.scope)
   }

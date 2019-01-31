@@ -28,6 +28,7 @@ import io.netty.channel.Channel;
  * reasonable to perform an expensive bootstrapping operation, as they often share a lifespan with
  * the JVM itself.
  */
+/*在创建TransportClient时执行*/
 public interface TransportClientBootstrap {
   /** Performs the bootstrapping operation, throwing an exception on failure. */
   void doBootstrap(TransportClient client, Channel channel) throws RuntimeException;

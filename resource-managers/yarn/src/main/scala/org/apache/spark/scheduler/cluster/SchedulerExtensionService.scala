@@ -54,7 +54,7 @@ trait SchedulerExtensionService {
 
 /**
  * Binding information for a [[SchedulerExtensionService]].
- *
+ * 为[[SchedulerExtensionService]]绑定信息。
  * The attempt ID will be set if the service is started within a YARN application master;
  * there is then a different attempt ID for every time that AM is restarted.
  * When the service binding is instantiated in client mode, there's no attempt ID, as it lacks
@@ -89,9 +89,11 @@ private[spark] class SchedulerExtensionServices extends SchedulerExtensionServic
   /**
    * Binding operation will load the named services and call bind on them too; the
    * entire set of services are then ready for `init()` and `start()` calls.
-   *
+   * 绑定操作将加载指定的服务并对其调用绑定;然后，整个服务集就准备好接受“init()”和“start()”调用。
+   * 绑定到spark应用 和 YARN
    * @param binding binding to the spark application and YARN
    */
+
   def start(binding: SchedulerExtensionServiceBinding): Unit = {
     if (started.getAndSet(true)) {
       logWarning("Ignoring re-entrant start operation")
@@ -105,6 +107,7 @@ private[spark] class SchedulerExtensionServices extends SchedulerExtensionServic
     val attemptId = binding.attemptId
     logInfo(s"Starting Yarn extension services with app $appId and attemptId $attemptId")
 
+    /*默认为Nil*/
     services = sparkContext.conf.get(SCHEDULER_SERVICES).map { sClass =>
       val instance = Utils.classForName(sClass)
         .newInstance()

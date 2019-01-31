@@ -135,9 +135,12 @@ private[spark] class CoarseGrainedExecutorBackend(
     }
   }
 
+  /*向Driver*/
   override def statusUpdate(taskId: Long, state: TaskState, data: ByteBuffer) {
+    /*new一个StatusUpdate（也就是要发送的消息）*/
     val msg = StatusUpdate(executorId, taskId, state, data)
     driver match {
+        /*向driver发送msg*/
       case Some(driverRef) => driverRef.send(msg)
       case None => logWarning(s"Drop $msg because has not yet connected to driver")
     }
@@ -218,7 +221,7 @@ private[spark] object CoarseGrainedExecutorBackend extends Logging {
           driverConf.get("spark.yarn.credentials.file"))
         SparkHadoopUtil.get.startCredentialUpdater(driverConf)
       }
-
+      /*创建Executor的SparkEnv*/
       val env = SparkEnv.createExecutorEnv(
         driverConf, executorId, hostname, port, cores, cfg.ioEncryptionKey, isLocal = false)
 

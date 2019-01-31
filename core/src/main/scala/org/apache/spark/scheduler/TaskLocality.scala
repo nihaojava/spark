@@ -18,10 +18,11 @@
 package org.apache.spark.scheduler
 
 import org.apache.spark.annotation.DeveloperApi
-
+/*数据本地性*/
 @DeveloperApi
 object TaskLocality extends Enumeration {
   // Process local is expected to be used ONLY within TaskSetManager for now.
+  /*Process local目前预计只在TaskSetManager中使用。*/
   val PROCESS_LOCAL, NODE_LOCAL, NO_PREF, RACK_LOCAL, ANY = Value
 
   type TaskLocality = Value

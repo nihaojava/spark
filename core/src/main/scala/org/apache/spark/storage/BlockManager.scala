@@ -150,10 +150,13 @@ private[spark] class BlockManager(
   private val asyncReregisterLock = new Object
 
   // Field related to peer block managers that are necessary for block replication
+  /*与复制block所需的对等的块管理器相关的字段*/
+  /*缓存的对等的块管理器*/
   @volatile private var cachedPeers: Seq[BlockManagerId] = _
   private val peerFetchLock = new Object
+  /*上次的时间*/
   private var lastPeerFetchTime = 0L
-
+  /*block复制策略*/
   private var blockReplicationPolicy: BlockReplicationPolicy = _
 
   /**
@@ -169,7 +172,7 @@ private[spark] class BlockManager(
     blockTransferService.init(this) //初始化BlockTransferService
     shuffleClient.init(appId) // 初始化shuffleClient
 
-    /*设置block的复制策略*/
+    /*设置block的复制策略,默认为随机选取*/
     blockReplicationPolicy = {
       /*复制策略class的name*/
       val priorityClass = conf.get(
@@ -250,10 +253,12 @@ private[spark] class BlockManager(
    * heart beat attempt or new block registration and another try to re-register all blocks
    * will be made then.
    */
+  /*向master报告所有block的状态*/
   private def reportAllBlocks(): Unit = {
     logInfo(s"Reporting ${blockInfoManager.size} blocks to the master.")
     for ((blockId, info) <- blockInfoManager.entries) {
       val status = getCurrentBlockStatus(blockId, info)
+      /*向master发送UpdateBlockInfo消息*/
       if (info.tellMaster && !tryToReportBlockStatus(blockId, status)) {
         logError(s"Failed to report $blockId to master; giving up.")
         return
@@ -415,6 +420,7 @@ private[spark] class BlockManager(
    * Return the updated storage status of the block with the given ID. More specifically, if
    * the block is dropped from memory and possibly added to disk, return the new storage level
    * and the updated in-memory and on-disk sizes.
+   * 根据给的blockid返回更新后的BlockStatus。
    */
   private def getCurrentBlockStatus(blockId: BlockId, info: BlockInfo): BlockStatus = {
     info.synchronized {
@@ -422,7 +428,10 @@ private[spark] class BlockManager(
         case null =>
           BlockStatus.empty
         case level =>
+          /*更新storageLevel*/
+          /*如果内存中不存在了，inMem=false*/
           val inMem = level.useMemory && memoryStore.contains(blockId)
+          /*如果磁盘中不存在了，onDisk=false*/
           val onDisk = level.useDisk && diskStore.contains(blockId)
           val deserialized = if (inMem) level.deserialized else false
           val replication = if (inMem  || onDisk) level.replication else 1
@@ -530,6 +539,8 @@ private[spark] class BlockManager(
    *
    * Must be called while holding a read lock on the block.
    * Releases the read lock upon exception; keeps the read lock upon successful return.
+   * 从本地block manager获取block的数据serialized bytes。
+   * 只有获取了此block的读锁才能调用此方法。
    */
   private def doGetLocalBytes(blockId: BlockId, info: BlockInfo): ChunkedByteBuffer = {
     val level = info.level
@@ -538,6 +549,7 @@ private[spark] class BlockManager(
     // serializing in-memory objects, and, finally, throw an exception if the block does not exist.
     if (level.deserialized) {
       // Try to avoid expensive serialization by reading a pre-serialized copy from disk:
+      /*通过从磁盘读取预先序列化的副本，尽量避免昂贵的序列化*/
       if (level.useDisk && diskStore.contains(blockId)) {
         // Note: we purposely do not try to put the block back into memory here. Since this branch
         // handles deserialized blocks, this block may only be cached in memory as objects, not
@@ -1156,13 +1168,19 @@ private[spark] class BlockManager(
 
   /**
    * Get peer block managers in the system.
+   * 获取系统中对等的block managers。（除去driver上和当前blockManagerId）
    */
   private def getPeers(forceFetch: Boolean): Seq[BlockManagerId] = {
     peerFetchLock.synchronized {
-      val cachedPeersTtl = conf.getInt("spark.storage.cachedPeersTtl", 60 * 1000) // milliseconds
+      /*cachedPeers的有效期*/
+      val cachedPeersTtl = conf.getInt("spark.storage.cachedPeersTtl", 60 * 1000) // milliseconds 1min
+      /*此次执行和上次执行，时间间隔大于1min的话为ture，否则为false*/
       val timeout = System.currentTimeMillis - lastPeerFetchTime > cachedPeersTtl
+      /*cachedPeers为null 或 forceFetch=ture 或 两次间隔大于1min，满足其中一个就执行下面的*/
       if (cachedPeers == null || forceFetch || timeout) {
+        /*向master发消息，获取除（driver上和当前blockManagerId）以外的所有blockManagerId，然后按hashCode升序排序*/
         cachedPeers = master.getPeers(blockManagerId).sortBy(_.hashCode)
+        /*更新时间*/
         lastPeerFetchTime = System.currentTimeMillis
         logDebug("Fetched peers from master: " + cachedPeers.mkString("[", ",", "]"))
       }
@@ -1179,8 +1197,9 @@ private[spark] class BlockManager(
       data: ChunkedByteBuffer,
       level: StorageLevel,
       classTag: ClassTag[_]): Unit = {
-
+    /*复制最大失败次数*/
     val maxReplicationFailures = conf.getInt("spark.storage.maxReplicationFailures", 1)
+    /*构造一个新的StorageLevel，只是将原来StorageLevel的replication修改为1*/
     val tLevel = StorageLevel(
       useDisk = level.useDisk,
       useMemory = level.useMemory,
@@ -1188,14 +1207,19 @@ private[spark] class BlockManager(
       deserialized = level.deserialized,
       replication = 1)
 
+    /*需要生产的副本数，本身算一个所以-1*/
     val numPeersToReplicateTo = level.replication - 1
 
     val startTime = System.nanoTime
 
+    /*记录副本所在的lockManagerId*/
     var peersReplicatedTo = mutable.HashSet.empty[BlockManagerId]
+    /*记录生成副本时失败的lockManagerId*/
     var peersFailedToReplicateTo = mutable.HashSet.empty[BlockManagerId]
+    /*失败次数*/
     var numFailures = 0
 
+    /*选定的要复制到的BlockManagerInfo列表*/
     var peersForReplication = blockReplicationPolicy.prioritize(
       blockManagerId,
       getPeers(false),
@@ -1203,6 +1227,8 @@ private[spark] class BlockManager(
       blockId,
       numPeersToReplicateTo)
 
+    /*遍历条件，失败次数<=最大失败次数（1）&& 选定的BlockManagerInfo列表不为空&&
+    已生产的副本所在的BlockManagerId的个数 不等于 需要生成的副本数*/
     while(numFailures <= maxReplicationFailures &&
         !peersForReplication.isEmpty &&
         peersReplicatedTo.size != numPeersToReplicateTo) {
@@ -1220,7 +1246,9 @@ private[spark] class BlockManager(
           classTag)
         logTrace(s"Replicated $blockId of ${data.size} bytes to $peer" +
           s" in ${(System.nanoTime - onePeerStartTime).toDouble / 1e6} ms")
+        /*取list剩余部分*/
         peersForReplication = peersForReplication.tail
+        /*记录lockManagerId*/
         peersReplicatedTo += peer
       } catch {
         case NonFatal(e) =>
@@ -1242,9 +1270,10 @@ private[spark] class BlockManager(
             numPeersToReplicateTo - peersReplicatedTo.size)
       }
     }
-
+    /*记录生成副本到几个对等的BlockManager，耗时多少*/
     logDebug(s"Replicating $blockId of ${data.size} bytes to " +
       s"${peersReplicatedTo.size} peer(s) took ${(System.nanoTime - startTime) / 1e6} ms")
+    /*如果存放副本的对等BlockManager个数 小于 需要生成的副本数，记录警告信息*/
     if (peersReplicatedTo.size < numPeersToReplicateTo) {
       logWarning(s"Block $blockId replicated to only " +
         s"${peersReplicatedTo.size} peer(s) instead of $numPeersToReplicateTo peers")
@@ -1297,9 +1326,13 @@ private[spark] class BlockManager(
     val level = info.level
 
     // Drop to disk, if storage level requires
+    /*如果此block的StorageLevel中可以使用磁盘，并且 磁盘中没有此blockFile
+    * 则将此block写入到磁盘*/
     if (level.useDisk && !diskStore.contains(blockId)) {
       logInfo(s"Writing block $blockId to disk")
+      /*匹配block中data的数据类型*/
       data() match {
+          /*是Array[T]，调用相应的方法写入磁盘*/
         case Left(elements) =>
           diskStore.put(blockId) { fileOutputStream =>
             serializerManager.dataSerializeStream(
@@ -1307,6 +1340,7 @@ private[spark] class BlockManager(
               fileOutputStream,
               elements.toIterator)(info.classTag.asInstanceOf[ClassTag[T]])
           }
+        /*是ChunkedByteBuffer，调用相应的方法写入磁盘*/
         case Right(bytes) =>
           diskStore.putBytes(blockId, bytes)
       }
@@ -1314,6 +1348,7 @@ private[spark] class BlockManager(
     }
 
     // Actually drop from memory store
+    /*从内存中删除此block*/
     val droppedMemorySize =
       if (memoryStore.contains(blockId)) memoryStore.getSize(blockId) else 0L
     val blockIsRemoved = memoryStore.remove(blockId)
@@ -1322,14 +1357,17 @@ private[spark] class BlockManager(
     } else {
       logWarning(s"Block $blockId could not be dropped from memory as it does not exist")
     }
-
+    /*获取更新后的BlockStatus，其中包含storageLevel，
+    * 如果block从内存移到磁盘的话，storageLevel 会更新为，useMemory=flase，useDisk=ture*/
     val status = getCurrentBlockStatus(blockId, info)
     if (info.tellMaster) {
+      /*向master报告此block的状态*/
       reportBlockStatus(blockId, status, droppedMemorySize)
     }
     if (blockIsUpdated) {
       addUpdatedBlockStatusToTaskMetrics(blockId, status)
     }
+    /*返回新的storageLevel*/
     status.storageLevel
   }
 

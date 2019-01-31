@@ -63,7 +63,7 @@ public class TransportServer implements Closeable {
       TransportContext context,
       String hostToBind,
       int portToBind,
-      RpcHandler appRpcHandler,
+      RpcHandler appRpcHandler, // RPC请求处理器
       List<TransportServerBootstrap> bootstraps) {
     this.context = context;
     this.conf = context.getConf();
@@ -71,6 +71,7 @@ public class TransportServer implements Closeable {
     this.bootstraps = Lists.newArrayList(Preconditions.checkNotNull(bootstraps));
 
     try {
+      /*初始化*/
       init(hostToBind, portToBind);
     } catch (RuntimeException e) {
       JavaUtils.closeQuietly(this);
@@ -85,21 +86,27 @@ public class TransportServer implements Closeable {
     return port;
   }
 
+  /*初始化TransportServer*/
   private void init(String hostToBind, int portToBind) {
-
+    /*获取ioMode，默认NIO*/
     IOMode ioMode = IOMode.valueOf(conf.ioMode());
+    /*创建EventLoopGroup线程池名字为bossGroup*/
     EventLoopGroup bossGroup =
       NettyUtils.createEventLoop(ioMode, conf.serverThreads(), conf.getModuleName() + "-server");
+    /*创建workerGroup*/
     EventLoopGroup workerGroup = bossGroup;
 
+    /*创建池化的ByteBuf分配器*/
     PooledByteBufAllocator allocator = NettyUtils.createPooledByteBufAllocator(
       conf.preferDirectBufs(), true /* allowCache */, conf.serverThreads());
 
+    /*创建ServerBootstrap辅助程序*/
     bootstrap = new ServerBootstrap()
       .group(bossGroup, workerGroup)
-      .channel(NettyUtils.getServerChannelClass(ioMode))
+      .channel(NettyUtils.getServerChannelClass(ioMode))//NioServerSocketChannel
       .option(ChannelOption.ALLOCATOR, allocator)
       .childOption(ChannelOption.ALLOCATOR, allocator);
+    /*option和childOption的区别？*/
 
     if (conf.backLog() > 0) {
       bootstrap.option(ChannelOption.SO_BACKLOG, conf.backLog());
@@ -113,20 +120,25 @@ public class TransportServer implements Closeable {
       bootstrap.childOption(ChannelOption.SO_SNDBUF, conf.sendBuf());
     }
 
+    /*设置管道初始化回调函数*/
     bootstrap.childHandler(new ChannelInitializer<SocketChannel>() {
       @Override
       protected void initChannel(SocketChannel ch) throws Exception {
         RpcHandler rpcHandler = appRpcHandler;
         for (TransportServerBootstrap bootstrap : bootstraps) {
+          /*执行引导程序*/
           rpcHandler = bootstrap.doBootstrap(ch, rpcHandler);
         }
+        /*调用initializePipeline初始化Channel的pipeline*/
         context.initializePipeline(ch, rpcHandler);
       }
     });
 
     InetSocketAddress address = hostToBind == null ?
         new InetSocketAddress(portToBind): new InetSocketAddress(hostToBind, portToBind);
+    /*绑定监听端口*/
     channelFuture = bootstrap.bind(address);
+    /*？*/
     channelFuture.syncUninterruptibly();
 
     port = ((InetSocketAddress) channelFuture.channel().localAddress()).getPort();

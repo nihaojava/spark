@@ -31,12 +31,21 @@ import static org.apache.spark.launcher.CommandBuilderUtils.*;
 
 /**
  * Launcher for Spark applications.
+ * 启动spark应用程序
  * <p>
  * Use this class to start Spark applications programmatically. The class uses a builder pattern
  * to allow clients to configure the Spark application and launch it as a child process.
  * </p>
+ * 使用这个类以编程方式启动Spark应用程序。
+ * 该类使用生成器模式允许客户端配置Spark应用程序并将其作为子进程启动。
  */
-public class SparkLauncher {
+/*sparkLauncher 是一个在代码里提交spark任务的类。
+* 这个类底层使用的依然是spark-submit脚本进行提交，通过ProcessBuilder 来设置相关环境参数调用
+* 见http://www.cnblogs.com/cloud-zhao/p/8386392.html，
+  /*【可以在自己的代码中new一个SparkLauncher，然后通过它来提交sparkApplication；直接运行自己的代码就完成了提交，
+  例如 java launcher_test.jar 而不需要用再运行spark-sumit user.jar 来提交；见
+  https://www.cnblogs.com/xing901022/p/8538713.html】*/
+  public class SparkLauncher {
 
   /** The Spark master. */
   public static final String SPARK_MASTER = "spark.master";
@@ -452,12 +461,14 @@ public class SparkLauncher {
 
   /**
    * Launches a sub-process that will start the configured Spark application.
+   * 启动一个子进程，该子进程将启动配置的Spark应用程序。
    * <p>
    * The {@link #startApplication(SparkAppHandle.Listener...)} method is preferred when launching
    * Spark, since it provides better control of the child application.
    *
    * @return A process handle for the Spark app.
    */
+  /* 提交一个任务，任务的提交输出结果如何由用户自己处理*/
   public Process launch() throws IOException {
     Process childProc = createBuilder().start();
     if (redirectToLog) {
@@ -492,12 +503,17 @@ public class SparkLauncher {
    * @param listeners Listeners to add to the handle before the app is launched.
    * @return A handle for the launched application.
    */
+  /*提交一个任务，并根据监听任务状态的改变来执行用户指定的listener*/
+  /*这个方法也是用来执行任务的。只是比launch 多了一个状态监控的功能，
+  用户可以通过提供sparkAppHandle.Listener来实现任务状态变化时做一些动作*/
   public SparkAppHandle startApplication(SparkAppHandle.Listener... listeners) throws IOException {
+    //这里启动一个LauncherServer的服务来接收app状态变化的数据,更详细的将会在其它部分记录
     ChildProcAppHandle handle = LauncherServer.newAppHandle();
     for (SparkAppHandle.Listener l : listeners) {
+      //这里把用户提供的监听放到执行函数里执行，具体如何实现将在其它部分记录
       handle.addListener(l);
     }
-
+    //这里就是获取spark-submit标准输出数据的log文件名称，如果没有设置，就通过下面代码进行生成和获取，根据类名和包名自动生成
     String loggerName = builder.getEffectiveConfig().get(CHILD_PROCESS_LOGGER_NAME);
     ProcessBuilder pb = createBuilder();
     // Only setup stderr + stdout to logger redirection if user has not otherwise configured output
@@ -520,24 +536,32 @@ public class SparkLauncher {
           appName = String.valueOf(COUNTER.incrementAndGet());
         }
       }
+      //获取包名
       String loggerPrefix = getClass().getPackage().getName();
+      //根据包名和appname生成log文件名
       loggerName = String.format("%s.app.%s", loggerPrefix, appName);
       pb.redirectErrorStream(true);
     }
-
+    //【这里把LauncherServer的端口号通告到环境变量里，
+    // LauncherBackend就是通过环境变量获取LauncherServer的端口号进行通信的】
+    // 【就是放在新启的子进程的环境变量里，LauncherBackend就是该进程中创建的组件】。
     pb.environment().put(LauncherProtocol.ENV_LAUNCHER_PORT,
       String.valueOf(LauncherServer.getServerInstance().getPort()));
     pb.environment().put(LauncherProtocol.ENV_LAUNCHER_SECRET, handle.getSecret());
     try {
+      //启动spark-submit 提交任务，并把标准log输出到之前设置的loggername里。
       handle.setChildProc(pb.start(), loggerName);
     } catch (IOException ioe) {
       handle.kill();
       throw ioe;
     }
-
+    /*返回的是 ChildProcAppHandle handle*/
     return handle;
   }
 
+  /*//这个方法是构造执行命令，生成ProcessBuilder的函数
+  //通过对象设置的javahome，sparkhome 找到对应的spark-submit脚本然后构建参数，生成cmd 命令，
+  最后放到processBuilder中生成执行子进程*/
   private ProcessBuilder createBuilder() {
     List<String> cmd = new ArrayList<>();
     String script = isWindows() ? "spark-submit.cmd" : "spark-submit";

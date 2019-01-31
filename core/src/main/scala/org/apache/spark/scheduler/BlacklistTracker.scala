@@ -31,6 +31,7 @@ import org.apache.spark.util.{Clock, SystemClock, Utils}
  * executors and nodes across an entire application (with a periodic expiry).  TaskSetManagers add
  * additional blacklisting of executors and nodes for individual tasks and stages which works in
  * concert with the blacklisting here.
+ * BlacklistTracker用于跟踪有问题的executors和nodes。
  *
  * The tracker needs to deal with a variety of workloads, eg.:
  *
@@ -47,6 +48,7 @@ import org.apache.spark.util.{Clock, SystemClock, Utils}
  * called by multiple threads, callers must already have a lock on the TaskSchedulerImpl.  The
  * one exception is [[nodeBlacklist()]], which can be called without holding a lock.
  */
+/*BlacklistTracker用于跟踪有问题的executors和nodes。*/
 private[scheduler] class BlacklistTracker (
     private val listenerBus: LiveListenerBus,
     conf: SparkConf,
@@ -305,13 +307,19 @@ private[scheduler] object BlacklistTracker extends Logging {
   /**
    * Returns true if the blacklist is enabled, based on checking the configuration in the following
    * order:
+   * 如果黑名单已启用返回true，根据以下顺序检查配置
    * 1. Is it specifically enabled or disabled?
+   * 1. 它是专门启用的还是禁用的?
    * 2. Is it enabled via the legacy timeout conf?
+   * 2. 是否通过遗留超时conf启用?
    * 3. Default is off
+   * 3.默认是关闭的
    */
+  /*Blacklist是否可用*/
   def isBlacklistEnabled(conf: SparkConf): Boolean = {
     conf.get(config.BLACKLIST_ENABLED) match {
       case Some(enabled) =>
+        /*如果BLACKLIST_ENABLED配置为true，直接返回true*/
         enabled
       case None =>
         // if they've got a non-zero setting for the legacy conf, always enable the blacklist,
@@ -319,9 +327,11 @@ private[scheduler] object BlacklistTracker extends Logging {
         val legacyKey = config.BLACKLIST_LEGACY_TIMEOUT_CONF.key
         conf.get(config.BLACKLIST_LEGACY_TIMEOUT_CONF).exists { legacyTimeout =>
           if (legacyTimeout == 0) {
+            /*如果是遗留配置，Blacklist不可用*/
             logWarning(s"Turning off blacklisting due to legacy configuration: $legacyKey == 0")
             false
           } else {
+            /*不是遗留配置，Blacklist不可用*/
             logWarning(s"Turning on blacklisting due to legacy configuration: $legacyKey > 0")
             true
           }

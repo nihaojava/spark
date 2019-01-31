@@ -204,6 +204,7 @@ private[spark] object Utils extends Logging {
   /**
    * Get the ClassLoader which loaded Spark.
    */
+  /*获取加载Spark的类加载器。*/
   def getSparkClassLoader: ClassLoader = getClass.getClassLoader
 
   /**
@@ -213,10 +214,12 @@ private[spark] object Utils extends Logging {
    * This should be used whenever passing a ClassLoader to Class.ForName or finding the currently
    * active loader when setting up ClassLoader delegation chains.
    */
+  /*用于获取线程上下文的ClassLoader，没有设置时获取加载Spark的ClassLoader。*/
   def getContextOrSparkClassLoader: ClassLoader =
     Option(Thread.currentThread().getContextClassLoader).getOrElse(getSparkClassLoader)
 
   /** Determines whether the provided class is loadable in the current thread. */
+  /*确定所提供的类在当前线程中是否可加载。*/
   def classIsLoadable(clazz: String): Boolean = {
     // scalastyle:off classforname
     Try { Class.forName(clazz, false, getContextOrSparkClassLoader) }.isSuccess
@@ -225,6 +228,7 @@ private[spark] object Utils extends Logging {
 
   // scalastyle:off classforname
   /** Preferred alternative to Class.forName(className) */
+  /*根据给定的类加载器，加载指定的Class*/
   def classForName(className: String): Class[_] = {
     Class.forName(className, true, getContextOrSparkClassLoader)
     // scalastyle:on classforname
@@ -392,9 +396,11 @@ private[spark] object Utils extends Logging {
 
   /**
    * A file name may contain some invalid URI characters, such as " ". This method will convert the
-   * file name to a raw path accepted by `java.net.URI(String)`.
+   * file name to a raw path accepted by .
+   * 文件名可能包含一些无效的URI字符，例如" "。此方法将转换文件名称到一个`java.net.URI(String)`接受的原始路径。
    *
    * Note: the file name must not contain "/" or "\"
+   * 注意：文件名一定不包含"/" or "\"。
    */
   def encodeFileNameToURIRawPath(fileName: String): String = {
     require(!fileName.contains("/") && !fileName.contains("\\"))
@@ -427,6 +433,7 @@ private[spark] object Utils extends Logging {
    * Throws SparkException if the target file already exists and has different contents than
    * the requested file.
    */
+    /*将文件或目录下载到本地目录。*/
   def fetchFile(
       url: String,
       targetDir: File,
@@ -2196,6 +2203,7 @@ private[spark] object Utils extends Logging {
 
   /**
    * Maximum number of retries when binding to a port before giving up.
+   * 绑定一个端口的最大重试次数，默认16
    */
   def portMaxRetries(conf: SparkConf): Int = {
     val maxRetries = conf.getOption("spark.port.maxRetries").map(_.toInt)
@@ -2218,26 +2226,32 @@ private[spark] object Utils extends Logging {
    * @param serviceName Name of the service.
    * @return (service: T, port: Int)
    */
+  /*在指定的端口启动服务*/
   def startServiceOnPort[T](
       startPort: Int,
       startService: Int => (T, Int),
       conf: SparkConf,
       serviceName: String = ""): (T, Int) = {
 
+    /*对startPort的检查*/
     require(startPort == 0 || (1024 <= startPort && startPort < 65536),
       "startPort should be between 1024 and 65535 (inclusive), or 0 for a random free port.")
 
     val serviceString = if (serviceName.isEmpty) "" else s" '$serviceName'"
+    /*最大重试次数，默认16*/
     val maxRetries = portMaxRetries(conf)
     for (offset <- 0 to maxRetries) {
       // Do not increment port if startPort is 0, which is treated as a special port
+      /*如果startPort=0，不增加端口号，它被当做一个特殊的端口。*/
       val tryPort = if (startPort == 0) {
         startPort
       } else {
         // If the new port wraps around, do not try a privilege port
+        /*从startPort开始，如果不成功尝试下一个端口，（类似环形，65535的下一个是1024）*/
         ((startPort + offset - 1024) % (65536 - 1024)) + 1024
       }
       try {
+        /*调用传递过来的启动函数*/
         val (service, port) = startService(tryPort)
         logInfo(s"Successfully started service$serviceString on port $port.")
         return (service, port)
@@ -2501,7 +2515,9 @@ private[spark] object Utils extends Logging {
 
   /**
    * Return whether dynamic allocation is enabled in the given conf.
+   * 根据conf返回是否启用动态分配executor
    */
+  /*spark.dynamicAllocation.enabled为ture && （不是local模式 或者 是测试模式）*/
   def isDynamicAllocationEnabled(conf: SparkConf): Boolean = {
     val dynamicAllocationEnabled = conf.getBoolean("spark.dynamicAllocation.enabled", false)
     dynamicAllocationEnabled &&
@@ -2511,6 +2527,7 @@ private[spark] object Utils extends Logging {
   /**
    * Return the initial number of executors for dynamic allocation.
    */
+  /*获取动态分配executors的初始executors个数*/
   def getDynamicAllocationInitialExecutors(conf: SparkConf): Int = {
     if (conf.get(DYN_ALLOCATION_INITIAL_EXECUTORS) < conf.get(DYN_ALLOCATION_MIN_EXECUTORS)) {
       logWarning(s"${DYN_ALLOCATION_INITIAL_EXECUTORS.key} less than " +
@@ -2632,6 +2649,10 @@ private[util] object CallerContext extends Logging {
  * specific applications impacting parts of the Hadoop system and potential problems they may be
  * creating (e.g. overloading NN). As HDFS mentioned in HDFS-9184, for a given HDFS operation, it's
  * very helpful to track which upper level job issues it.
+ * 一个实用程序类，为HDFS和Yarn设置Spark调用上下文。“上下文”将由传入的参数构造。
+ * 当Spark应用程序在Yarn和HDFS上运行时，它的调用上下文将被写入到Yarn RM审计日志和HDFS -audit.log中。
+ * 这可以帮助用户更好地诊断和理解特定的应用程序如何影响Hadoop系统的部分以及它们可能正在创建的潜在问题(例如，重载NN)。
+ * 正如HDFS-9184中提到的，对于给定的HDFS操作，跟踪哪个上层作业发出了它是非常有帮助的。
  *
  * @param from who sets up the caller context (TASK, CLIENT, APPMASTER)
  *
@@ -2645,6 +2666,7 @@ private[util] object CallerContext extends Logging {
  * @param taskId task id
  * @param taskAttemptNumber task attempt id
  */
+/*提供保存调用者上下文信息的类型。*/
 private[spark] class CallerContext(
   from: String,
   upstreamCallerContext: Option[String] = None,

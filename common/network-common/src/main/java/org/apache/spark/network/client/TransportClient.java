@@ -49,6 +49,8 @@ import static org.apache.spark.network.util.NettyUtils.getRemoteAddress;
  * Client for fetching consecutive chunks of a pre-negotiated stream. This API is intended to allow
  * efficient transfer of a large amount of data, broken up into chunks with size ranging from
  * hundreds of KB to a few MB.
+ * 客户端，用于获取预先协商的流的连续块。它的API旨在允许高效地传输大量数据，
+ * 这些数据被分割成大小从几百KB到几MB不等的块。
  *
  * Note that while this client deals with the fetching of chunks from a stream (i.e., data plane),
  * the actual setup of the streams is done outside the scope of the transport layer. The convenience
@@ -121,7 +123,7 @@ public class TransportClient implements Closeable {
    *
    * Chunk indices go from 0 onwards. It is valid to request the same chunk multiple times, though
    * some streams may not support this.
-   *
+   *  块索引从0开始。
    * Multiple fetchChunk requests may be outstanding simultaneously, and the chunks are guaranteed
    * to be returned in the same order that they were requested, assuming only a single
    * TransportClient is used to fetch the chunks.
@@ -131,6 +133,7 @@ public class TransportClient implements Closeable {
    * @param chunkIndex 0-based index of the chunk to fetch
    * @param callback Callback invoked upon successful receipt of chunk, or upon any failure.
    */
+  /*从远端协商好的流中请求单个块*/
   public void fetchChunk(
       long streamId,
       final int chunkIndex,
@@ -175,6 +178,7 @@ public class TransportClient implements Closeable {
    * @param streamId The stream to fetch.
    * @param callback Object to call with the stream data.
    */
+  /*使用流的ID，从远端获取流数据*/
   public void stream(final String streamId, final StreamCallback callback) {
     final long startTime = System.currentTimeMillis();
     if (logger.isDebugEnabled()) {
@@ -185,6 +189,7 @@ public class TransportClient implements Closeable {
     // written to the socket atomically, so that callbacks are called in the right order
     // when responses arrive.
     synchronized (this) {
+      /*给hander添加回调*/
       handler.addStreamCallback(callback);
       channel.writeAndFlush(new StreamRequest(streamId)).addListener(
         new ChannelFutureListener() {
@@ -220,15 +225,19 @@ public class TransportClient implements Closeable {
    * @param callback Callback to handle the RPC's reply.
    * @return The RPC's id.
    */
+  /*向服务端发送RPC的请求，通过at least once delivery 原则保证请求不丢失*/
   public long sendRpc(ByteBuffer message, final RpcResponseCallback callback) {
     final long startTime = System.currentTimeMillis();
     if (logger.isTraceEnabled()) {
       logger.trace("Sending RPC to {}", getRemoteAddress(channel));
     }
 
+    /*使用UUID生成请求requestId*/
     final long requestId = Math.abs(UUID.randomUUID().getLeastSignificantBits());
+    /*向handler中添加requestId和回调类RpcResponseCallback的引用之间的关系*/
     handler.addRpcRequest(requestId, callback);
 
+    /*将RPC请求发出去*/
     channel.writeAndFlush(new RpcRequest(requestId, new NioManagedBuffer(message))).addListener(
       new ChannelFutureListener() {
         @Override

@@ -32,6 +32,7 @@ object SparkFiles {
 
   /**
    * Get the root directory that contains files added through `SparkContext.addFile()`.
+   * 获取根目录，其中包含通过“SparkContext.addFile()”添加的文件。
    */
   def getRootDirectory(): String =
     SparkEnv.get.driverTmpDir.getOrElse(".")

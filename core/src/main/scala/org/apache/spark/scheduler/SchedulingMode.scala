@@ -22,6 +22,8 @@ package org.apache.spark.scheduler
  *    to order tasks amongst a Schedulable's sub-queues
  *  "NONE" is used when the a Schedulable has no sub-queues.
  */
+/*“FAIR”和“FIFO”确定在可调度的子队列中使用哪个策略来对任务进行排序。
+当可调度的子队列中没有子队列时，使用“NONE”。*/
 object SchedulingMode extends Enumeration {
 
   type SchedulingMode = Value

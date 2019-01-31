@@ -24,6 +24,7 @@ import org.apache.spark.annotation.DeveloperApi
 /**
  * :: DeveloperApi ::
  * Information about a running task attempt inside a TaskSet.
+ * 关于任务集中正在运行的任务尝试的信息。
  */
 @DeveloperApi
 class TaskInfo(
@@ -34,7 +35,7 @@ class TaskInfo(
      */
     val index: Int,
     val attemptNumber: Int,
-    val launchTime: Long,
+    val launchTime: Long, /*启动时间戳ms*/
     val executorId: String,
     val host: String,
     val taskLocality: TaskLocality.TaskLocality,
@@ -54,6 +55,7 @@ class TaskInfo(
    */
   def accumulables: Seq[AccumulableInfo] = _accumulables
 
+  /*累加器相关*/
   private[this] var _accumulables: Seq[AccumulableInfo] = Nil
 
   private[spark] def setAccumulables(newAccumulables: Seq[AccumulableInfo]): Unit = {
@@ -64,6 +66,7 @@ class TaskInfo(
    * The time when the task has completed successfully (including the time to remotely fetch
    * results, if necessary).
    */
+  /*完成时间戳ms*/
   var finishTime: Long = 0
 
   var failed = false
@@ -111,10 +114,13 @@ class TaskInfo(
 
   def id: String = s"$index.$attemptNumber"
 
+  /*task执行时长，单位为ms*/
   def duration: Long = {
     if (!finished) {
+      /*此任务还没完成，抛出异常*/
       throw new UnsupportedOperationException("duration() called on unfinished task")
     } else {
+      /*完成时间点 - 启动时间点，单位为ms */
       finishTime - launchTime
     }
   }

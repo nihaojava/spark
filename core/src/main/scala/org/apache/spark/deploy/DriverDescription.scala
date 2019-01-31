@@ -17,12 +17,14 @@
 
 package org.apache.spark.deploy
 
+/*Driver的描述信息，
+Master会将此发送给Worker，让worker来启动Driver*/
 private[deploy] case class DriverDescription(
-    jarUrl: String,
+    jarUrl: String, //jar的Url
     mem: Int,
     cores: Int,
-    supervise: Boolean,
-    command: Command) {
+    supervise: Boolean, //是否监控（失败重启）
+    command: Command) { //启动命令
 
   override def toString: String = s"DriverDescription (${command.mainClass})"
 }

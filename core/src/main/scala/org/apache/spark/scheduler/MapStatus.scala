@@ -50,7 +50,7 @@ private[spark] sealed trait MapStatus {
 
 private[spark] object MapStatus {
 
-  // 如果未压缩的长度大于2000，使用HighlyCompressedMapStatus;否则使用CompressedMapStatus
+  // 如果未压缩的长度大于2000B，使用HighlyCompressedMapStatus;否则使用CompressedMapStatus
   // 说明对于较大数据量使用高压缩，一般数据量使用普通压缩
   def apply(loc: BlockManagerId, uncompressedSizes: Array[Long]): MapStatus = {
     if (uncompressedSizes.length > 2000) {
@@ -95,6 +95,7 @@ private[spark] object MapStatus {
  * represented using a single byte.
  *
  * @param loc location where the task is being executed.
+ *            块的大小，由reduce分区id索引。
  * @param compressedSizes size of the blocks, indexed by reduce partition id.
  */
 private[spark] class CompressedMapStatus(
@@ -131,6 +132,7 @@ private[spark] class CompressedMapStatus(
 /**
  * A [[MapStatus]] implementation that only stores the average size of non-empty blocks,
  * plus a bitmap for tracking which blocks are empty.
+ * 只存储非空Block的平均大小的[[MapStatus]]实现，加上一个bitmap，用于跟踪哪些块是空的。
  *
  * @param loc location where the task is being executed
  * @param numNonEmptyBlocks the number of non-empty blocks

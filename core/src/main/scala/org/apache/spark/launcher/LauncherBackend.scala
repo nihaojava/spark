@@ -26,8 +26,9 @@ import org.apache.spark.util.{ThreadUtils, Utils}
 /**
  * A class that can be used to talk to a launcher server. Users should extend this class to
  * provide implementation for the abstract methods.
- *
+ * 一个可用于与启动服务器launcher server通信的类。用户应该扩展这个类来为抽象方法提供实现。
  * See `LauncherServer` for an explanation of how launcher communication works.
+ * 有关启动器通信如何工作的解释，请参见“LauncherServer”。
  */
 private[spark] abstract class LauncherBackend {
 
@@ -61,6 +62,7 @@ private[spark] abstract class LauncherBackend {
     }
   }
 
+  /*向LauncherServer发送AppID*/
   def setAppId(appId: String): Unit = {
     if (connection != null) {
       connection.send(new SetAppId(appId))
@@ -98,7 +100,7 @@ private[spark] abstract class LauncherBackend {
   }
 
   private class BackendConnection(s: Socket) extends LauncherConnection(s) {
-
+    /*实现的处理消息的方法，接收到消息就会调用此方法（线程的run会调用此方法）*/
     override protected def handle(m: Message): Unit = m match {
       case _: Stop =>
         fireStopRequest()

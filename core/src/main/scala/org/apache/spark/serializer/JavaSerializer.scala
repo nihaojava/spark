@@ -134,7 +134,7 @@ private[spark] class JavaSerializerInstance(
  * @note This serializer is not guaranteed to be wire-compatible across different versions of
  * Spark. It is intended to be used to serialize/de-serialize data within a single
  * Spark application.
- * 不保证跨spark版本OK。它用于在一个单独打spark版本中序列化和反序列化。
+ * 不保证跨spark版本OK。它用于在一个单独的spark版本中序列化和反序列化。
  */
 @DeveloperApi
 class JavaSerializer(conf: SparkConf) extends Serializer with Externalizable {

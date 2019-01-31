@@ -267,6 +267,7 @@ private[spark] class StandaloneAppClient(
 
   }
 
+  /*sparkcontext启动 ->启动StandaloneSchedulerBackend 过程中new AppClient调用此方法*/
   def start() {
     // Just launch an rpcEndpoint; it will call back into the listener.
     endpoint.set(rpcEnv.setupEndpoint("AppClient", new ClientEndpoint(rpcEnv)))

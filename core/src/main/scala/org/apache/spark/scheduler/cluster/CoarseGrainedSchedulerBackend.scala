@@ -35,11 +35,16 @@ import org.apache.spark.util.{RpcUtils, SerializableBuffer, ThreadUtils, Utils}
 
 /**
  * A scheduler backend that waits for coarse-grained executors to connect.
+ * 等待粗粒度executors连接的调度程序后端。
  * This backend holds onto each executor for the duration of the Spark job rather than relinquishing
  * executors whenever a task is done and asking the scheduler to launch a new executor for
  * each new task. Executors may be launched in a variety of ways, such as Mesos tasks for the
  * coarse-grained Mesos mode or standalone processes for Spark's standalone deploy mode
  * (spark.deploy.*).
+ * 此调度程序后端在Spark作业期间保留每个executor，而不是在任务完成时放弃executor；
+ * 并要求scheduler为每个新任务启动一个新的executor。
+ * executor可以以多种方式启动，例如用于粗粒度Mesos模式的Mesos任务，
+ * 或Spark的独立部署模式(Spark.deploy.*)的独立进程。
  */
 private[spark]
 class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: RpcEnv)
@@ -67,9 +72,11 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   // must be protected by `CoarseGrainedSchedulerBackend.this`. Besides, `executorDataMap` should
   // only be modified in `DriverEndpoint.receive/receiveAndReply` with protection by
   // `CoarseGrainedSchedulerBackend.this`.
+  /*executorId 和 ExecutorData之间的映射*/
   private val executorDataMap = new HashMap[String, ExecutorData]
 
   // Number of executors requested from the cluster manager that have not registered yet
+  /*从群集管理器申请的但尚未注册的执executors的数量*/
   @GuardedBy("CoarseGrainedSchedulerBackend.this")
   private var numPendingExecutors = 0
 
@@ -78,7 +85,11 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   // Executors we have requested the cluster manager to kill that have not died yet; maps
   // the executor ID to whether it was explicitly killed by the driver (and thus shouldn't
   // be considered an app-related failure).
+  /*我们已经请求集群管理器杀死但尚未死亡的Executors;
+  从executor ID到它是否被driver显式杀死之间的映射(因此不应该被认为是与应用程序相关的失败)。*/
   @GuardedBy("CoarseGrainedSchedulerBackend.this")
+  /*请求集群管理器kill一个Executor时，Executor并不会立即被“杀死”，
+  所以用它来缓存请求了kill的Executor 与 它是否被杀死 之间的映射关系*/
   private val executorsPendingToRemove = new HashMap[String, Boolean]
 
   // A map to store hostname with its possible task number running on it
@@ -96,25 +107,32 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     extends ThreadSafeRpcEndpoint with Logging {
 
     // Executors that have been lost, but for which we don't yet know the real exit reason.
+    /*已经丢失的（但是还不知道真实的退出原因）的Executors*/
     protected val executorsPendingLossReason = new HashSet[String]
 
+    /*每个executor的RpcAddress 和 ExecutorId 之间的映射*/
     protected val addressToExecutorId = new HashMap[RpcAddress, String]
 
+    /*driver-revive-thread线程，用于唤起对延迟调度的task进行资源分配*/
     private val reviveThread =
       ThreadUtils.newDaemonSingleThreadScheduledExecutor("driver-revive-thread")
 
+    /*启动driver-revive-thread线程，每隔1s向自己self发送消息ReviveOffers*/
+    /*注册到rpcEnv的Dispatcher时会触发此方法*/
     override def onStart() {
       // Periodically revive offers to allow delay scheduling to work
       val reviveIntervalMs = conf.getTimeAsMs("spark.scheduler.revive.interval", "1s")
 
       reviveThread.scheduleAtFixedRate(new Runnable {
         override def run(): Unit = Utils.tryLogNonFatalError {
+          /*向自己self发送消息ReviveOffers*/
           Option(self).foreach(_.send(ReviveOffers))
         }
       }, 0, reviveIntervalMs, TimeUnit.MILLISECONDS)
     }
 
     override def receive: PartialFunction[Any, Unit] = {
+      /*接受Executor的计算结果*/
       case StatusUpdate(executorId, taskId, state, data) =>
         scheduler.statusUpdate(taskId, state, data.value)
         if (TaskState.isFinished(state)) {
@@ -144,6 +162,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
 
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
 
+      /*注册Executor*/
       case RegisterExecutor(executorId, executorRef, hostname, cores, logUrls) =>
         if (executorDataMap.contains(executorId)) {
           executorRef.send(RegisterExecutorFailed("Duplicate executor ID: " + executorId))
@@ -210,10 +229,14 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     // Make fake resource offers on all executors
     private def makeOffers() {
       // Filter out executors under killing
+      /*帅选出活着的executors*/
       val activeExecutors = executorDataMap.filterKeys(executorIsAlive)
+      /*根据每个executor的配置，创建workOffer*/
       val workOffers = activeExecutors.map { case (id, executorData) =>
         new WorkerOffer(id, executorData.executorHost, executorData.freeCores)
       }.toIndexedSeq
+      /*调用TaskSchedulerImpl的resourceOffers给task分配资源；*/
+      /*调用launchTasks运行task*/
       launchTasks(scheduler.resourceOffers(workOffers))
     }
 
@@ -235,8 +258,9 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
         launchTasks(scheduler.resourceOffers(workOffers))
       }
     }
-
+    /*判断executorId是否活着*/
     private def executorIsAlive(executorId: String): Boolean = synchronized {
+      /*不在kill列表中 且 也不在 丢失列表中*/
       !executorsPendingToRemove.contains(executorId) &&
         !executorsPendingLossReason.contains(executorId)
     }
@@ -334,6 +358,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
 
   protected def minRegisteredRatio: Double = _minRegisteredRatio
 
+  /*子类调用此方法*/
   override def start() {
     val properties = new ArrayBuffer[(String, String)]
     for ((key, value) <- scheduler.sc.conf.getAll) {
@@ -343,6 +368,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     }
 
     // TODO (prashant) send conf instead of properties
+    /*创建driverEndpointRef*/
     driverEndpoint = createDriverEndpointRef(properties)
   }
 
@@ -439,6 +465,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   /**
    * Return the number of executors currently registered with this backend.
    */
+  /*已经注册的Executors数*/
   private def numExistingExecutors: Int = executorDataMap.size
 
   override def getExecutorIds(): Seq[String] = {
@@ -483,6 +510,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
    *                             This includes running, pending, and completed tasks.
    * @return whether the request is acknowledged by the cluster manager.
    */
+  /*根据我们的调度需求请求更新集群管理器。*/
   final override def requestTotalExecutors(
       numExecutors: Int,
       localityAwareTasks: Int,
@@ -519,6 +547,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
    *
    * @return a future whose evaluation indicates whether the request is acknowledged.
    */
+  /*什么都不做，直接返回false？*/
   protected def doRequestTotalExecutors(requestedTotal: Int): Future[Boolean] =
     Future.successful(false)
 

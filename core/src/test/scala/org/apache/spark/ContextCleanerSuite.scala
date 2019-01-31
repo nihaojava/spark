@@ -355,6 +355,8 @@ class ContextCleanerSuite extends ContextCleanerSuiteBase {
 /**
  * Class to test whether RDDs, shuffles, etc. have been successfully cleaned.
  * The checkpoint here refers only to normal (reliable) checkpoints, not local checkpoints.
+ * 此类测试RDDs, shuffles,等是否已经被成功删除。
+ * 这里的检查点仅指常规(可靠)检查点，而不是本地检查点。
  */
 class CleanerTester(
     sc: SparkContext,
@@ -370,6 +372,7 @@ class CleanerTester(
   val toBeCheckpointIds = new HashSet[Long] ++= checkpointIds
   val isDistributed = !sc.isLocal
 
+  /*CleanerListener接口的匿名实现类*/
   val cleanerListener = new CleanerListener {
     def rddCleaned(rddId: Int): Unit = {
       toBeCleanedRDDIds.synchronized { toBeCleanedRDDIds -= rddId }

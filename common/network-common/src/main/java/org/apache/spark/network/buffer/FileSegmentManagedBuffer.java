@@ -35,12 +35,13 @@ import org.apache.spark.network.util.TransportConf;
 
 /**
  * A {@link ManagedBuffer} backed by a segment in a file.
+ * 一个ManagedBuffer表示文件中的一段。
  */
 public final class FileSegmentManagedBuffer extends ManagedBuffer {
   private final TransportConf conf;
-  private final File file;
-  private final long offset;
-  private final long length;
+  private final File file;  //要读取的文件
+  private final long offset; //偏移量，开始位置index
+  private final long length; //长度
 
   public FileSegmentManagedBuffer(TransportConf conf, File file, long offset, long length) {
     this.conf = conf;
@@ -54,6 +55,7 @@ public final class FileSegmentManagedBuffer extends ManagedBuffer {
     return length;
   }
 
+  /*NIO方式读取文件*/
   @Override
   public ByteBuffer nioByteBuffer() throws IOException {
     FileChannel channel = null;
@@ -91,6 +93,7 @@ public final class FileSegmentManagedBuffer extends ManagedBuffer {
     }
   }
 
+  /*文件流方式读取，传统IO*/
   @Override
   public InputStream createInputStream() throws IOException {
     FileInputStream is = null;
@@ -127,6 +130,7 @@ public final class FileSegmentManagedBuffer extends ManagedBuffer {
     return this;
   }
 
+  /*将数据转换为Netty对象*/
   @Override
   public Object convertToNetty() throws IOException {
     if (conf.lazyFileDescriptor()) {

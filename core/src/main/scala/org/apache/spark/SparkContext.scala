@@ -191,6 +191,7 @@ class SparkContext(config: SparkConf) extends Logging {
    | of them to some neutral value ahead of time, so that calling "stop()" while the       |
    | constructor is still running is safe.                                                 |
    * ------------------------------------------------------------------------------------- */
+  /*私有属性。这些属性保存着context的内部状态，不可以被外部访问。*/
 
   private var _conf: SparkConf = _
   private var _eventLogDir: Option[URI] = None
@@ -220,6 +221,7 @@ class SparkContext(config: SparkConf) extends Logging {
    | Accessors and public fields. These provide access to the internal state of the        |
    | context.                                                                              |
    * ------------------------------------------------------------------------------------- */
+  /*访问器和公共的字段。提供对context内部状态的访问*/
 
   private[spark] def conf: SparkConf = _conf
 
@@ -250,10 +252,12 @@ class SparkContext(config: SparkConf) extends Logging {
   private[spark] val listenerBus = new LiveListenerBus(this)
 
   // This function allows components created by SparkEnv to be mocked in unit tests:
+  /*创建Driver端的SparkEnv*/
   private[spark] def createSparkEnv(
       conf: SparkConf,
       isLocal: Boolean,
       listenerBus: LiveListenerBus): SparkEnv = {
+    /*调用 SparkEnv.createDriverEnv*/
     SparkEnv.createDriverEnv(conf, isLocal, listenerBus, SparkContext.numDriverCores(master))
   }
 
@@ -342,6 +346,8 @@ class SparkContext(config: SparkConf) extends Logging {
    | All internal fields holding state are initialized here, and any error prompts the     |
    | stop() method to be called.                                                           |
    * ------------------------------------------------------------------------------------- */
+  /*初始化。此代码以异常安全的方式初始化上下文。
+  * 所有保持状态的内部字段都在这里初始化，任何错误都会提示调用stop()方法。*/
 
   private def warnSparkMem(value: String): String = {
     logWarning("Using SPARK_MEM to set amount of memory to use per executor process is " +
@@ -387,6 +393,7 @@ class SparkContext(config: SparkConf) extends Logging {
     logInfo(s"Submitted application: $appName")
 
     // System property spark.yarn.app.id must be set if user code ran by AM on a YARN cluster
+    /*系统属性 spark.yarn.app.id 必须设置，如果用户代码通过ApplicationMaster在YARN cluster运行*/
     if (master == "yarn" && deployMode == "cluster" && !_conf.contains("spark.yarn.app.id")) {
       throw new SparkException("Detected yarn cluster mode, but isn't running on a cluster. " +
         "Deployment to YARN is not supported directly by SparkContext. Please use spark-submit.")
@@ -499,18 +506,27 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // We need to register "HeartbeatReceiver" before "createTaskScheduler" because Executor will
     // retrieve "HeartbeatReceiver" in the constructor. (SPARK-6640)
+    /*启动HeartbeatReceiver，并且注册到rpcEnv*/
     _heartbeatReceiver = env.rpcEnv.setupEndpoint(
       HeartbeatReceiver.ENDPOINT_NAME, new HeartbeatReceiver(this))
 
     // Create and start the scheduler
+    /*创建并启动scheduler*/
+    /*创建schedulerBackend和taskScheduler*/
+    /*根据不同的deploymode创建方式不同*/
     val (sched, ts) = SparkContext.createTaskScheduler(this, master, deployMode)
     _schedulerBackend = sched
     _taskScheduler = ts
+    /*new一个DAGScheduler，将SparkContext作为构造参数*/
     _dagScheduler = new DAGScheduler(this)
+    /*通知_heartbeatReceiver TaskScheduler已经创建，
+    * heartbeatReceiver收到消息后将获取SparkContext的_taskScheduler设置到自身的scheduler中*/
     _heartbeatReceiver.ask[Boolean](TaskSchedulerIsSet)
 
     // start TaskScheduler after taskScheduler sets DAGScheduler reference in DAGScheduler's
     // constructor
+    /*当taskScheduler设置DAGScheduler引用在DAGScheduler的构造函数中后，启动TaskScheduler*/
+    /*启动taskScheduler，start里面还会启动DAGScheduler*/
     _taskScheduler.start()
 
     _applicationId = _taskScheduler.applicationId()
@@ -541,7 +557,12 @@ class SparkContext(config: SparkConf) extends Logging {
       }
 
     // Optionally scale number of executors dynamically based on workload. Exposed for testing.
+    /*可选地根据工作负载动态伸缩执行器的数量。暴露用于测试。*/
+    /*判断是否需要启用_executorAllocationManager
+    * 集群模式下并且spark.dynamicAllocation.enabled为ture时，会启用*/
     val dynamicAllocationEnabled = Utils.isDynamicAllocationEnabled(_conf)
+
+    /*在schedulerBackend的实现类同时实现了特征ExecutorAllocationClient的情况下，才会创建_executorAllocationManager*/
     _executorAllocationManager =
       if (dynamicAllocationEnabled) {
         schedulerBackend match {
@@ -554,8 +575,11 @@ class SparkContext(config: SparkConf) extends Logging {
       } else {
         None
       }
+    /*调用start方法启动，注意foreach在这的用法，
+    因为_executorAllocationManager为Option类型，有可能为None，调用foreach就省去判断是否为None的步骤了*/
     _executorAllocationManager.foreach(_.start())
 
+    /*实例化清理器ContextCleaner,并启动*/
     _cleaner =
       if (_conf.getBoolean("spark.cleaner.referenceTracking", true)) {
         Some(new ContextCleaner(this))
@@ -1805,8 +1829,11 @@ class SparkContext(config: SparkConf) extends Logging {
 
   /**
    * Adds a JAR dependency for all tasks to be executed on this `SparkContext` in the future.
+   * 为此`SparkContext`上将要执行的所有task添加依赖的jar。
    * @param path can be either a local file, a file in HDFS (or other Hadoop-supported filesystems),
    * an HTTP, HTTPS or FTP URI, or local:/path for a file on every worker node.
+   * 可以是本地文件，也可以是HDFS上的文件（或者其他以hadoop支持的文件系统），
+   * 又或者每个工作节点上文件的HTTP、HTTPS或FTP URI或local:/路径。
    */
   def addJar(path: String) {
     if (path == null) {
@@ -1815,6 +1842,7 @@ class SparkContext(config: SparkConf) extends Logging {
       var key = ""
       if (path.contains("\\")) {
         // For local paths with backslashes on Windows, URI throws an exception
+        /*对于在windows系统中带有"\\"的本地路径，构造URI会抛出异常，所以在这先单独处理*/
         key = env.rpcEnv.fileServer.addJar(new File(path))
       } else {
         val uri = new URI(path)
@@ -1822,6 +1850,7 @@ class SparkContext(config: SparkConf) extends Logging {
         Utils.validateURL(uri)
         key = uri.getScheme match {
           // A JAR file which exists only on the driver node
+            /*一个只存在driver端的jar*/
           case null | "file" =>
             try {
               env.rpcEnv.fileServer.addJar(new File(uri.getPath))
@@ -1831,6 +1860,7 @@ class SparkContext(config: SparkConf) extends Logging {
                 null
             }
           // A JAR file which exists locally on every worker node
+            /*一个在每个worker节点本地都存在的jar*/
           case "local" =>
             "file:" + uri.getPath
           case _ =>
@@ -2010,6 +2040,7 @@ class SparkContext(config: SparkConf) extends Logging {
    * 例如results[1] = partition1的计算结果】
    * 其他的runJob最后都会调用该runJob
    */
+  /*最后的runJob*/
   def runJob[T, U: ClassTag](
       rdd: RDD[T],
       func: (TaskContext, Iterator[T]) => U,
@@ -2032,7 +2063,7 @@ class SparkContext(config: SparkConf) extends Logging {
     dagScheduler.runJob(rdd, cleanedFunc, partitions, callSite, resultHandler, localProperties.get)
     // 更新进度条为完成状态
     progressBar.foreach(_.finishAll())
-    // 当RDD的job计算完，才真正执行checkPoint
+    // 【当RDD的job计算完，才真正执行checkPoint】
     rdd.doCheckpoint()
   }
 
@@ -2047,11 +2078,18 @@ class SparkContext(config: SparkConf) extends Logging {
    * @return in-memory collection with a result of the job (each collection element will contain
    * a result from one partition)
    */
+  /*在上一个runJob基础之上，
+  * new了一个partitions.size长度的数组results，用来存储各个partition的计算结果；
+  * 并构造了一个resultHandler函数，用于将partition的计算结果存入results(index, res) => results(index) = res；
+  * 最后返回results*/
   def runJob[T, U: ClassTag](
       rdd: RDD[T],
       func: (TaskContext, Iterator[T]) => U,
       partitions: Seq[Int]): Array[U] = {
     val results = new Array[U](partitions.size)
+    /*(index, res) => results(index) = res ；
+    该函数的作用：以数组索引为分区id，将对应的分区计算结果存入数组。
+    例如 results[1] = partition1的计算结果*/
     runJob[T, U](rdd, func, partitions, (index, res) => results(index) = res)
     results
   }
@@ -2066,6 +2104,8 @@ class SparkContext(config: SparkConf) extends Logging {
    * @return in-memory collection with a result of the job (each collection element will contain
    * a result from one partition)
    */
+  /*在上一个runJob基础之上
+  将用户的func转换为(TaskContext, Iterator[T]) => U【resultStage中规定的func格式】 */
   def runJob[T, U: ClassTag](
       rdd: RDD[T],
       func: Iterator[T] => U,
@@ -2306,11 +2346,13 @@ class SparkContext(config: SparkConf) extends Logging {
 
   private val nextShuffleId = new AtomicInteger(0)
 
+  /*为新Shuffle生成一个id*/
   private[spark] def newShuffleId(): Int = nextShuffleId.getAndIncrement()
 
   private val nextRddId = new AtomicInteger(0)
 
   /** Register a new RDD, returning its RDD ID */
+  /*为新RDD生成一个id*/
   private[spark] def newRddId(): Int = nextRddId.getAndIncrement()
 
   /**
@@ -2657,6 +2699,8 @@ object SparkContext extends Logging {
   /**
    * Create a task scheduler based on a given master URL.
    * Return a 2-tuple of the scheduler backend and the task scheduler.
+   * 创建一个task scheduler根据给定的master URL。
+   * 返回一个 SchedulerBackend 和 TaskScheduler 构成的 2-tuple
    */
   private def createTaskScheduler(
       sc: SparkContext,
@@ -2668,12 +2712,13 @@ object SparkContext extends Logging {
     val MAX_LOCAL_TASK_FAILURES = 1
 
     master match {
+        /*local*/
       case "local" =>
         val scheduler = new TaskSchedulerImpl(sc, MAX_LOCAL_TASK_FAILURES, isLocal = true)
         val backend = new LocalSchedulerBackend(sc.getConf, scheduler, 1)
         scheduler.initialize(backend)
         (backend, scheduler)
-
+      /*local[N] 或 local[*]*/
       case LOCAL_N_REGEX(threads) =>
         def localCpuCount: Int = Runtime.getRuntime.availableProcessors()
         // local[*] estimates the number of cores on the machine; local[N] uses exactly N threads.
@@ -2681,12 +2726,14 @@ object SparkContext extends Logging {
         if (threadCount <= 0) {
           throw new SparkException(s"Asked to run locally with $threadCount threads")
         }
+        /*task失败重试次数为默认值，即1*/
         val scheduler = new TaskSchedulerImpl(sc, MAX_LOCAL_TASK_FAILURES, isLocal = true)
         val backend = new LocalSchedulerBackend(sc.getConf, scheduler, threadCount)
         scheduler.initialize(backend)
         (backend, scheduler)
-
+      /*local[N, maxRetries] 和local[N]的唯一区别，是task失败重试次数maxFailures不一定为默认值1 */
       case LOCAL_N_FAILURES_REGEX(threads, maxFailures) =>
+        /*当前jvm可用cpu个数*/
         def localCpuCount: Int = Runtime.getRuntime.availableProcessors()
         // local[*, M] means the number of cores on the computer with M failures
         // local[N, M] means exactly N threads with M failures
@@ -2695,14 +2742,14 @@ object SparkContext extends Logging {
         val backend = new LocalSchedulerBackend(sc.getConf, scheduler, threadCount)
         scheduler.initialize(backend)
         (backend, scheduler)
-
+      /*standalone*/
       case SPARK_REGEX(sparkUrl) =>
         val scheduler = new TaskSchedulerImpl(sc)
         val masterUrls = sparkUrl.split(",").map("spark://" + _)
         val backend = new StandaloneSchedulerBackend(scheduler, sc, masterUrls)
         scheduler.initialize(backend)
         (backend, scheduler)
-
+      /*local-cluster[N, cores, memory]*/
       case LOCAL_CLUSTER_REGEX(numSlaves, coresPerSlave, memoryPerSlave) =>
         // Check to make sure memory requested <= memoryPerSlave. Otherwise Spark will just hang.
         val memoryPerSlaveInt = memoryPerSlave.toInt
@@ -2711,7 +2758,6 @@ object SparkContext extends Logging {
             "Asked to launch cluster with %d MB RAM / worker but requested %d MB/worker".format(
               memoryPerSlaveInt, sc.executorMemory))
         }
-
         val scheduler = new TaskSchedulerImpl(sc)
         val localCluster = new LocalSparkCluster(
           numSlaves.toInt, coresPerSlave.toInt, memoryPerSlaveInt, sc.conf)
@@ -2722,13 +2768,15 @@ object SparkContext extends Logging {
           localCluster.stop()
         }
         (backend, scheduler)
-
+      /*其他外部的ClusterMangr，例如yarn 或 mesos*/
       case masterUrl =>
+        /*根据传入master的值，获取相应的ClusterManager*/
         val cm = getClusterManager(masterUrl) match {
           case Some(clusterMgr) => clusterMgr
           case None => throw new SparkException("Could not parse Master URL: '" + master + "'")
         }
         try {
+          /*调用clusterManager的createTaskScheduler方法创建scheduler*/
           val scheduler = cm.createTaskScheduler(sc, masterUrl)
           val backend = cm.createSchedulerBackend(sc, masterUrl, scheduler)
           cm.initialize(scheduler, backend)
@@ -2741,9 +2789,11 @@ object SparkContext extends Logging {
     }
   }
 
+  /*获取外部的ExternalClusterManager，可能是YarnClusterManager 或 MesosClusterManager */
   private def getClusterManager(url: String): Option[ExternalClusterManager] = {
     val loader = Utils.getContextOrSparkClassLoader
     val serviceLoaders =
+      /*加载ExternalClusterManager，然后过滤得到匹配master的ClusterManager*/
       ServiceLoader.load(classOf[ExternalClusterManager], loader).asScala.filter(_.canCreate(url))
     if (serviceLoaders.size > 1) {
       throw new SparkException(
@@ -2755,6 +2805,7 @@ object SparkContext extends Logging {
 
 /**
  * A collection of regexes for extracting information from the master string.
+ * 匹配sparkMaster的正则表达式
  */
 private object SparkMasterRegex {
   // Regular expression used for local[N] and local[*] master formats

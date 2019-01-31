@@ -25,6 +25,7 @@ import io.netty.buffer.ByteBuf;
  * <p>
  * The stream ID is an arbitrary string that needs to be negotiated between the two endpoints before
  * the data can be streamed.
+ * 流ID是一个任意字符串，在此之前需要在两个端点之间进行协商数据可以流化。
  */
 public final class StreamRequest extends AbstractMessage implements RequestMessage {
    public final String streamId;

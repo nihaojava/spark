@@ -217,6 +217,7 @@ object YarnSparkHadoopUtil {
   /**
    * Escapes a string for inclusion in a command line executed by Yarn. Yarn executes commands
    * using either
+   * 转义字符串以包含在Yarn执行的命令行中。Yarn使用这两种方法执行命令
    *
    * (Unix-based) `bash -c "command arg1 arg2"` and that means plain quoting doesn't really work.
    * The argument is enclosed in single quotes and some key characters are escaped.
@@ -231,6 +232,7 @@ object YarnSparkHadoopUtil {
    * @param arg A single argument.
    * @return Argument quoted for execution via Yarn's generated shell script.
    */
+  /*转义为可以正常执行的shell命令*/
   def escapeForShell(arg: String): String = {
     if (arg != null) {
       if (Utils.isWindows) {
@@ -265,11 +267,14 @@ object YarnSparkHadoopUtil {
   /**
    * Getting the initial target number of executors depends on whether dynamic allocation is
    * enabled.
+   * 获取初始目标executors数量取决于是否启用动态分配。【这里看到了动态分配】
    * If not using dynamic allocation it gets the number of executors requested by the user.
+   * 如果不使用动态分配，则获取用户请求的执行器的数量。
    */
   def getInitialTargetExecutorNumber(
       conf: SparkConf,
       numExecutors: Int = DEFAULT_NUMBER_EXECUTORS): Int = {
+    /*如果启用了动态分配，返回动态分配设置的初始Executor个数*/
     if (Utils.isDynamicAllocationEnabled(conf)) {
       val minNumExecutors = conf.get(DYN_ALLOCATION_MIN_EXECUTORS)
       val initialNumExecutors = Utils.getDynamicAllocationInitialExecutors(conf)
@@ -280,6 +285,7 @@ object YarnSparkHadoopUtil {
 
       initialNumExecutors
     } else {
+      /*没有启用动态分配，默认为2*/
       val targetNumExecutors =
         sys.env.get("SPARK_EXECUTOR_INSTANCES").map(_.toInt).getOrElse(numExecutors)
       // System property can override environment variable.

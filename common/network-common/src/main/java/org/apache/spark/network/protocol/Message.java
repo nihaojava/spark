@@ -22,17 +22,21 @@ import io.netty.buffer.ByteBuf;
 import org.apache.spark.network.buffer.ManagedBuffer;
 
 /** An on-the-wire transmittable message. */
+/*在线传输的消息*/
 public interface Message extends Encodable {
   /** Used to identify this request type. */
   Type type();
 
   /** An optional body for the message. */
+  /*消息体*/
   ManagedBuffer body();
 
   /** Whether to include the body of the message in the same frame as the message. */
   boolean isBodyInFrame();
 
   /** Preceding every serialized Message is its type, which allows us to deserialize it. */
+  /*在每个序列化消息之前它的类型，这允许我们反序列化它。*/
+    /*Message的类型*/
   enum Type implements Encodable {
     ChunkFetchRequest(0), ChunkFetchSuccess(1), ChunkFetchFailure(2),
     RpcRequest(3), RpcResponse(4), RpcFailure(5),

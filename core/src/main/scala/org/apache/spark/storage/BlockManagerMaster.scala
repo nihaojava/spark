@@ -110,7 +110,7 @@ class BlockManagerMaster(
   }
 
   /** Get ids of other nodes in the cluster from the driver */
-  /*获取其他blockManager的BlockManagerId*/
+  /*从driver的master中获取其他executor节点的BlockManagerId*/
   def getPeers(blockManagerId: BlockManagerId): Seq[BlockManagerId] = {
     driverEndpoint.askWithRetry[Seq[BlockManagerId]](GetPeers(blockManagerId))
   }

@@ -25,7 +25,9 @@ import org.apache.spark.scheduler.SchedulingMode.SchedulingMode
 
 /**
  * An interface for schedulable entities.
+ * 可调度实体的接口。
  * there are two type of Schedulable entities(Pools and TaskSetManagers)
+ * 两种类型的实现Pools 和 TaskSetManagers。
  */
 private[spark] trait Schedulable {
   var parent: Pool

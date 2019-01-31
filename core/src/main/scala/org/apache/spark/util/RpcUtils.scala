@@ -33,16 +33,19 @@ private[spark] object RpcUtils {
   }
 
   /** Returns the configured number of times to retry connecting */
+  /*rpc连接尝试次数，默认为3次*/
   def numRetries(conf: SparkConf): Int = {
     conf.getInt("spark.rpc.numRetries", 3)
   }
 
   /** Returns the configured number of milliseconds to wait on each retry */
+  /*rpc每次重新连接需要等待的毫秒数。默认为3s*/
   def retryWaitMs(conf: SparkConf): Long = {
     conf.getTimeAsMs("spark.rpc.retry.wait", "3s")
   }
 
   /** Returns the default Spark timeout to use for RPC ask operations. */
+  /*rpc的ask操作默认超时时间。默认为120s。spark.rpc.askTimeout的优先级高于spark.network.timeout*/
   def askRpcTimeout(conf: SparkConf): RpcTimeout = {
     RpcTimeout(conf, Seq("spark.rpc.askTimeout", "spark.network.timeout"), "120s")
   }

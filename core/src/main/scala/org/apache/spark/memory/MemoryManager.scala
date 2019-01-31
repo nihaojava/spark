@@ -53,7 +53,7 @@ private[spark] abstract class MemoryManager(
   @GuardedBy("this")
   protected val offHeapExecutionMemoryPool = new ExecutionMemoryPool(this, MemoryMode.OFF_HEAP)//堆外内存的计算内存池
 
-  /*堆上的内存池是通过传递过来的参数，初始化*/
+  /*堆上的内存池是通过传递过来的参数，初始化的*/
   onHeapStorageMemoryPool.incrementPoolSize(onHeapStorageMemory)
   onHeapExecutionMemoryPool.incrementPoolSize(onHeapExecutionMemory)
 

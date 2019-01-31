@@ -76,6 +76,7 @@ private[spark] abstract class Task[T](
 
   /**
    * Called by [[org.apache.spark.executor.Executor]] to run this task.
+   * 被 [[org.apache.spark.executor.Executor]]调用运行taks。
    *
    * @param taskAttemptId an identifier for this task attempt that is unique within a SparkContext.
    * @param attemptNumber how many times this task has been attempted (0 for the first attempt)
@@ -114,6 +115,7 @@ private[spark] abstract class Task[T](
       Option(attemptNumber)).setCurrentContext()
 
     try {
+      /*实际的运行*/
       runTask(context)
     } catch {
       case e: Throwable =>

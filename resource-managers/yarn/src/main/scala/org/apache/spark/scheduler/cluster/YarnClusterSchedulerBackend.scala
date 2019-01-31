@@ -30,10 +30,12 @@ private[spark] class YarnClusterSchedulerBackend(
     sc: SparkContext)
   extends YarnSchedulerBackend(scheduler, sc) {
 
+  /*启动schedulerBackend*/
   override def start() {
     val attemptId = ApplicationMaster.getAttemptId
     bindToYarn(attemptId.getApplicationId(), Some(attemptId))
     super.start()
+    /*获取初始目标executors数量取决于是否启用动态分配。如果不使用动态分配，则获取用户请求的执行器的数量。*/
     totalExpectedExecutors = YarnSparkHadoopUtil.getInitialTargetExecutorNumber(sc.conf)
   }
 

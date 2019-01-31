@@ -25,9 +25,12 @@ import org.apache.spark.network.buffer.NettyManagedBuffer;
 
 /**
  * A generic RPC which is handled by a remote {@link org.apache.spark.network.server.RpcHandler}.
+ * 一个通用的RPC，此消息类型被一个远端的服务端RpcHandler来处理。
  * This will correspond to a single
  * {@link org.apache.spark.network.protocol.ResponseMessage} (either success or failure).
+ * 这将对应一个单独的ResponseMessage
  */
+/*由服务端RpcHandler来处理，需要得到一个ResponseMessage回复信息*/
 public final class RpcRequest extends AbstractMessage implements RequestMessage {
   /** Used to link an RPC request with its response. */
   public final long requestId;
@@ -45,19 +48,26 @@ public final class RpcRequest extends AbstractMessage implements RequestMessage 
     // The integer (a.k.a. the body size) is not really used, since that information is already
     // encoded in the frame length. But this maintains backwards compatibility with versions of
     // RpcRequest that use Encoders.ByteArrays.
+    /*实际没有使用此方法*/
     return 8 + 4;
   }
 
+  /*编码*/
   @Override
   public void encode(ByteBuf buf) {
+    /*写request UUID，long 8个字节*/
     buf.writeLong(requestId);
     // See comment in encodedLength().
+    /*写body长度，4个字节*/
     buf.writeInt((int) body().size());
   }
 
+  /*解码*/
   public static RpcRequest decode(ByteBuf buf) {
+    /*先读取requestId*/
     long requestId = buf.readLong();
     // See comment in encodedLength().
+    /*读取body长度*/
     buf.readInt();
     return new RpcRequest(requestId, new NettyManagedBuffer(buf.retain()));
   }

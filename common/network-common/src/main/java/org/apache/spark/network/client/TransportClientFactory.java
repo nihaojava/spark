@@ -49,17 +49,22 @@ import org.apache.spark.network.util.TransportConf;
 
 /**
  * Factory for creating {@link TransportClient}s by using createClient.
+ * 创建TransportClient的工厂，通过createClient方法创建。
  *
  * The factory maintains a connection pool to other hosts and should return the same
  * TransportClient for the same remote host. It also shares a single worker thread pool for
  * all TransportClients.
+ * 工厂维护到其他主机的连接池，并且应该返回相同的连接池对于同一个远程主机。
+ * 它还共享一个工作线程池对于所有的TransportClients。
  *
  * TransportClients will be reused whenever possible. Prior to completing the creation of a new
  * TransportClient, all given {@link TransportClientBootstrap}s will be run.
+ * 只要可能，TransportClients将被重用。在创建一个新的TransportClient前会运行TransportClientBootstrap。
  */
 public class TransportClientFactory implements Closeable {
 
   /** A simple data structure to track the pool of clients between two peer nodes. */
+  /*一个简单的数据结构，用来记录两个对等节点间的客户端池*/
   private static class ClientPool {
     TransportClient[] clients;
     Object[] locks;
@@ -75,17 +80,24 @@ public class TransportClientFactory implements Closeable {
 
   private static final Logger logger = LoggerFactory.getLogger(TransportClientFactory.class);
 
-  private final TransportContext context;
-  private final TransportConf conf;
-  private final List<TransportClientBootstrap> clientBootstraps;
+  private final TransportContext context; //参数传递的TransportContext的引用
+  private final TransportConf conf; // 通过调用TransportContext的getConf获取
+  private final List<TransportClientBootstrap> clientBootstraps;  // 参数传递的TransportClientBootstrap列表
+  /*针对每个socket地址的连接池ClientPool的缓存*/
   private final ConcurrentHashMap<SocketAddress, ClientPool> connectionPool;
 
   /** Random number generator for picking connections between peers. */
+  /*对Socket地址对应的连接池ClientPool中缓存的TransportClient进行随机选择，对每个连接池做负载均衡*/
   private final Random rand;
+  /*从TransportConf获取的key为“spark.+模块名——io.numConnectionsPerPeer”的属性值。
+  * 此属性用于指定对等节点间的连接数。*/
   private final int numConnectionsPerPeer;
 
+  /*客户端Channel被创建时使用的类*/
   private final Class<? extends Channel> socketChannelClass;
+  /*workerGroup工作线程组*/
   private EventLoopGroup workerGroup;
+  /*池化的ByteBuf分配器*/
   private PooledByteBufAllocator pooledAllocator;
 
   public TransportClientFactory(
@@ -98,12 +110,16 @@ public class TransportClientFactory implements Closeable {
     this.numConnectionsPerPeer = conf.numConnectionsPerPeer();
     this.rand = new Random();
 
+    /*IO模式，默认为NIO*/
     IOMode ioMode = IOMode.valueOf(conf.ioMode());
+    /*根据ioMode匹配，默认为NioSocketChannel*/
     this.socketChannelClass = NettyUtils.getClientChannelClass(ioMode);
+    /*创建workerGroup线程组（池）*/
     this.workerGroup = NettyUtils.createEventLoop(
         ioMode,
         conf.clientThreads(),
         conf.getModuleName() + "-client");
+    /**/
     this.pooledAllocator = NettyUtils.createPooledByteBufAllocator(
       conf.preferDirectBufs(), false /* allowCache */, conf.clientThreads());
   }
@@ -122,6 +138,8 @@ public class TransportClientFactory implements Closeable {
    *
    * Concurrency: This method is safe to call from multiple threads.
    */
+  /*根据给定的remoteHost和remotePort创建一个TransportClient
+  * 首先从clientPool中缓存中获取，如果没有再创建*/
   public TransportClient createClient(String remoteHost, int remotePort) throws IOException {
     // Get connection from the connection pool first.
     // If it is not found or not active, create a new one.
@@ -178,6 +196,7 @@ public class TransportClientFactory implements Closeable {
           logger.info("Found inactive connection to {}, creating a new one.", resolvedAddress);
         }
       }
+      /*真正创建一个TransportClient*/
       clientPool.clients[clientIndex] = createClient(resolvedAddress);
       return clientPool.clients[clientIndex];
     }
@@ -196,21 +215,27 @@ public class TransportClientFactory implements Closeable {
   }
 
   /** Create a completely new {@link TransportClient} to the remote address. */
+  /*实际的创建一个TransportClient，只建立了一个连接*/
   private TransportClient createClient(InetSocketAddress address) throws IOException {
+    /*记录日志创建一个connection to address*/
     logger.debug("Creating new connection to {}", address);
-
+    /*new一个引导程序*/
     Bootstrap bootstrap = new Bootstrap();
+    /*设置workerGroup*/
     bootstrap.group(workerGroup)
-      .channel(socketChannelClass)
+      .channel(socketChannelClass)/*创建channelFactory*/
       // Disable Nagle's Algorithm since we don't want packets to wait
+      // 配置Channel
       .option(ChannelOption.TCP_NODELAY, true)
       .option(ChannelOption.SO_KEEPALIVE, true)
       .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, conf.connectionTimeoutMs())
       .option(ChannelOption.ALLOCATOR, pooledAllocator);
 
+    /*TransportClient和Channel的引用*/
     final AtomicReference<TransportClient> clientRef = new AtomicReference<>();
     final AtomicReference<Channel> channelRef = new AtomicReference<>();
 
+    /*设置handler，设置管道初始化回调函数，connect连接成功时调用一次initChannel*/
     bootstrap.handler(new ChannelInitializer<SocketChannel>() {
       @Override
       public void initChannel(SocketChannel ch) {
@@ -222,7 +247,9 @@ public class TransportClientFactory implements Closeable {
 
     // Connect to the remote server
     long preConnect = System.nanoTime();
+    /*连接远端服务，连接成功将将触发handler*/
     ChannelFuture cf = bootstrap.connect(address);
+    /*等待执行结果，timeout120s*/
     if (!cf.awaitUninterruptibly(conf.connectionTimeoutMs())) {
       throw new IOException(
         String.format("Connecting to %s timed out (%s ms)", address, conf.connectionTimeoutMs()));
@@ -239,6 +266,7 @@ public class TransportClientFactory implements Closeable {
     logger.debug("Connection to {} successful, running bootstraps...", address);
     try {
       for (TransportClientBootstrap clientBootstrap : clientBootstraps) {
+        /*执行客户端引导程序*/
         clientBootstrap.doBootstrap(client, channel);
       }
     } catch (Exception e) { // catch non-RuntimeExceptions too as bootstrap may be written in Scala
@@ -252,6 +280,7 @@ public class TransportClientFactory implements Closeable {
     logger.info("Successfully created connection to {} after {} ms ({} ms spent in bootstraps)",
       address, (postBootstrap - preConnect) / 1000000, (postBootstrap - preBootstrap) / 1000000);
 
+    /*返回TransportClient*/
     return client;
   }
 

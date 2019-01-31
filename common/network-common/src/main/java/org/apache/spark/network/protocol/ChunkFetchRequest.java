@@ -23,8 +23,10 @@ import io.netty.buffer.ByteBuf;
 /**
  * Request to fetch a sequence of a single chunk of a stream. This will correspond to a single
  * {@link org.apache.spark.network.protocol.ResponseMessage} (either success or failure).
+ * 请求获取流中的一个数据块的序列。
  */
 public final class ChunkFetchRequest extends AbstractMessage implements RequestMessage {
+  /*一个流中的一个数据块*/
   public final StreamChunkId streamChunkId;
 
   public ChunkFetchRequest(StreamChunkId streamChunkId) {

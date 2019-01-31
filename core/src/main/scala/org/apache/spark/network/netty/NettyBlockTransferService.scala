@@ -50,6 +50,7 @@ private[spark] class NettyBlockTransferService(
   extends BlockTransferService {
 
   // TODO: Don't use Java serialization, use a more cross-version compatible serialization format.
+  /*不要使用Java序列化，使用一种更跨版本兼容的序列化格式。*/
   private val serializer = new JavaSerializer(conf)
   private val authEnabled = securityManager.isAuthenticationEnabled()
   private val transportConf = SparkTransportConf.fromSparkConf(conf, "shuffle", numCores)

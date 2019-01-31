@@ -70,7 +70,7 @@ private[spark] abstract class YarnSchedulerBackend(
 
   /**
    * Bind to YARN. This *must* be done before calling [[start()]].
-   *
+   * 绑定到YARN,这必须在调用start()前完成。
    * @param appId YARN application ID
    * @param attemptId Optional YARN attempt ID
    */
@@ -79,9 +79,12 @@ private[spark] abstract class YarnSchedulerBackend(
     this.attemptId = attemptId
   }
 
+  /*子类会调用此方法*/
   override def start() {
     require(appId.isDefined, "application ID unset")
+    /**/
     val binding = SchedulerExtensionServiceBinding(sc, appId.get, attemptId)
+    /*默认为空*/
     services.start(binding)
     super.start()
   }
@@ -216,6 +219,7 @@ private[spark] abstract class YarnSchedulerBackend(
   /**
    * An [[RpcEndpoint]] that communicates with the ApplicationMaster.
    */
+  /*和ApplicationMaster通信*/
   private class YarnSchedulerEndpoint(override val rpcEnv: RpcEnv)
     extends ThreadSafeRpcEndpoint with Logging {
     private var amEndpoint: Option[RpcEndpointRef] = None

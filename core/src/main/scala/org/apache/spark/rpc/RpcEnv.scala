@@ -30,6 +30,8 @@ import org.apache.spark.util.RpcUtils
 /**
  * A RpcEnv implementation must have a [[RpcEnvFactory]] implementation with an empty constructor
  * so that it can be created via Reflection.
+ * 一个RpcEnv的实现，必须有一个带有空构造函数的[[RpcEnvFactory]]的实现。
+ * 因为这样，可以通过反射来创建。
  */
 private[spark] object RpcEnv {
 
@@ -51,8 +53,10 @@ private[spark] object RpcEnv {
       conf: SparkConf,
       securityManager: SecurityManager,
       clientMode: Boolean): RpcEnv = {
+    /*RpcEnvConfig，一个样例类，保存了rpcEnv的配置信息*/
     val config = RpcEnvConfig(conf, name, bindAddress, advertiseAddress, port, securityManager,
       clientMode)
+    /*创建RpcEnv*/
     new NettyRpcEnvFactory().create(config)
   }
 }

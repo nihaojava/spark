@@ -77,6 +77,7 @@ private[deploy] class Master(
   private val drivers = new HashSet[DriverInfo]
   private val completedDrivers = new ArrayBuffer[DriverInfo]
   // Drivers currently spooled for scheduling
+  /*等待调度的Driver*/
   private val waitingDrivers = new ArrayBuffer[DriverInfo]
   private var nextDriverNumber = 0
 
@@ -650,6 +651,7 @@ private[deploy] class Master(
 
   /**
    * Schedule and launch executors on workers
+   * 调度并启动executors 在workers上
    */
   private def startExecutorsOnWorkers(): Unit = {
     // Right now this is a very simple FIFO scheduler. We keep trying to fit in the first app
@@ -698,32 +700,43 @@ private[deploy] class Master(
   /**
    * Schedule the currently available resources among waiting apps. This method will be called
    * every time a new app joins or resource availability changes.
+   * 为等待的应用程序安排当前可用的资源。
+   * 每当新应用程序加入或资源可用性发生变化时，将调用此方法。
    */
+  /*为Driver分配资源，来运行Driver*/
   private def schedule(): Unit = {
     if (state != RecoveryState.ALIVE) {
       return
     }
     // Drivers take strict precedence over executors
+    /*将workers中状态为ALIVE的顺序打乱，返回*/
     val shuffledAliveWorkers = Random.shuffle(workers.toSeq.filter(_.state == WorkerState.ALIVE))
     val numWorkersAlive = shuffledAliveWorkers.size
     var curPos = 0
+    /*遍历等待启动的Drivers*/
     for (driver <- waitingDrivers.toList) { // iterate over a copy of waitingDrivers
       // We assign workers to each waiting driver in a round-robin fashion. For each driver, we
       // start from the last worker that was assigned a driver, and continue onwards until we have
       // explored all alive workers.
       var launched = false
       var numWorkersVisited = 0
+      /*再遍历Alive的Work*/
       while (numWorkersVisited < numWorkersAlive && !launched) {
+        /*随机选一个worker*/
         val worker = shuffledAliveWorkers(curPos)
         numWorkersVisited += 1
+        /*work上的资源满足Driver的需求，才会被选中，否则继续下一个work*/
         if (worker.memoryFree >= driver.desc.mem && worker.coresFree >= driver.desc.cores) {
+          /*运行Driver*/
           launchDriver(worker, driver)
           waitingDrivers -= driver
+          /*launched赋为true，表明此Driver已经启动，跳出while，为下一个Driver选Work*/
           launched = true
         }
         curPos = (curPos + 1) % numWorkersAlive
       }
     }
+    /*调度并启动executors 在workers上*/
     startExecutorsOnWorkers()
   }
 
@@ -986,11 +999,14 @@ private[deploy] class Master(
     new DriverInfo(now, newDriverId(date), desc, date)
   }
 
+  /*启动driver*/
   private def launchDriver(worker: WorkerInfo, driver: DriverInfo) {
     logInfo("Launching driver " + driver.id + " on worker " + worker.id)
     worker.addDriver(driver)
     driver.worker = Some(worker)
+    /*向worker发送启动Driver的消息*/
     worker.endpoint.send(LaunchDriver(driver.id, driver.desc))
+    /*状态设为RUNNING*/
     driver.state = DriverState.RUNNING
   }
 
@@ -1022,6 +1038,7 @@ private[deploy] object Master extends Logging {
   val SYSTEM_NAME = "sparkMaster"
   val ENDPOINT_NAME = "Master"
 
+  /*主函数*/
   def main(argStrings: Array[String]) {
     Utils.initDaemon(log)
     val conf = new SparkConf
@@ -1036,6 +1053,7 @@ private[deploy] object Master extends Logging {
    *   (2) The web UI bound port
    *   (3) The REST server bound port, if any
    */
+  /*用于local-cluster模式测试*/
   def startRpcEnvAndEndpoint(
       host: String,
       port: Int,

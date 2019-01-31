@@ -84,13 +84,18 @@ private[netty] case class RpcOutboxMessage(
 
 }
 
+/*发件箱
+* nettyEnv：当前Outbox所在节点上的NettyRpcEnv
+* address： Outbox所对应的远端RpcAddress*/
 private[netty] class Outbox(nettyEnv: NettyRpcEnv, val address: RpcAddress) {
 
   outbox => // Give this an alias so we can use it more clearly in closures.
 
+  /*要发送的消息列表*/
   @GuardedBy("this")
   private val messages = new java.util.LinkedList[OutboxMessage]
 
+  /*当前Outbox内的TransportClient，消息的发送都依赖与此*/
   @GuardedBy("this")
   private var client: TransportClient = null
 

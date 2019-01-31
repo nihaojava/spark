@@ -32,6 +32,7 @@ import org.apache.spark.util.Utils
 
 /**
  * A [[SchedulerBackend]] implementation for Spark's standalone cluster manager.
+ * Spark独立集群管理器的[[SchedulerBackend]]实现。
  */
 private[spark] class StandaloneSchedulerBackend(
     scheduler: TaskSchedulerImpl,
@@ -105,7 +106,9 @@ private[spark] class StandaloneSchedulerBackend(
       }
     val appDesc = ApplicationDescription(sc.appName, maxCores, sc.executorMemory, command,
       webUrl, sc.eventLogDir, sc.eventLogCodec, coresPerExecutor, initialExecutorLimit)
+    /*new一个StandaloneAppClient*/
     client = new StandaloneAppClient(sc.env.rpcEnv, masters, appDesc, this, conf)
+    /*启动*/
     client.start()
     launcherBackend.setState(SparkAppHandle.State.SUBMITTED)
     waitForRegistration()

@@ -67,12 +67,13 @@ private[scheduler] class TaskSetBlacklist(val conf: SparkConf, val stageId: Int,
    * for the entire application.  That is to keep this method as fast as possible in the inner-loop
    * of the scheduler, where those filters will have already been applied.
    */
+  /**/
   def isExecutorBlacklistedForTask(executorId: String, index: Int): Boolean = {
     execToFailures.get(executorId).exists { execFailures =>
       execFailures.getNumTaskFailures(index) >= MAX_TASK_ATTEMPTS_PER_EXECUTOR
     }
   }
-
+  /*node的黑名单task中是否包含？为index的task*/
   def isNodeBlacklistedForTask(node: String, index: Int): Boolean = {
     nodeToBlacklistedTaskIndexes.get(node).exists(_.contains(index))
   }

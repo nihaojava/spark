@@ -66,9 +66,12 @@ private[spark] class ReliableRDDCheckpointData[T: ClassTag](@transient private v
 
     // Optionally clean our checkpoint files if the reference is out of scope
     // 是否清除checkpoint文件如果引用超出范围
-    // 【如果该参数设置为true的话，会注册到context的cleaner，在sc退出的时候进行清理】
+    // 【如果该参数设置为true的话，会注册到contextCleaner，在sc退出的时候进行清理】
     if (rdd.conf.getBoolean("spark.cleaner.referenceTracking.cleanCheckpoints", false)) {
+
       rdd.context.cleaner.foreach { cleaner =>
+        /*调用cleaner的registerRDDCheckpointDataForCleanup方法，注册清理任务。
+        * 第一个参数为要清理的对象newRDD；第二个参数为rdd的id，用于构造清理任务信息*/
         cleaner.registerRDDCheckpointDataForCleanup(newRDD, rdd.id)
       }
     }
@@ -88,6 +91,8 @@ private[spark] object ReliableRDDCheckpointData extends Logging {
   }
 
   /** Clean up the files associated with the checkpoint data for this RDD. */
+  /*清理此RDD关联的checkpoint文件
+  * 此方法会在ContextCleaner中执行CleanCheckpoint清理任务的被调用*/
   def cleanCheckpoint(sc: SparkContext, rddId: Int): Unit = {
     checkpointPath(sc, rddId).foreach { path =>
       path.getFileSystem(sc.hadoopConfiguration).delete(path, true)

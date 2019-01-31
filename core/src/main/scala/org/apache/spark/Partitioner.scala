@@ -33,7 +33,7 @@ import org.apache.spark.util.random.SamplingUtils
  * An object that defines how the elements in a key-value pair RDD are partitioned by key.
  * Maps each key to a partition ID, from 0 to `numPartitions - 1`.
  * Partitioner是定义了在key-value型的RDD中，如何根据Key来划分元素的一个对象。
- * 映射每个key到一个partition ID，从 0到分区数-1
+ * 映射每个key到一个partition ID，ID从 0 到 `分区数-1`
  */
 abstract class Partitioner extends Serializable {
   def numPartitions: Int

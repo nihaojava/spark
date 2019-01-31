@@ -33,6 +33,7 @@ import org.apache.spark.ui.SparkUI
 
 @DeveloperApi
 @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, include = JsonTypeInfo.As.PROPERTY, property = "Event")
+/*spark监听器监听的事件接口*/
 trait SparkListenerEvent {
   /* Whether output this event to the event log */
   protected[spark] def logEvent: Boolean = true
@@ -174,6 +175,8 @@ private[spark] trait SparkHistoryListenerFactory {
 /**
  * Interface for listening to events from the Spark scheduler. Most applications should probably
  * extend SparkListener or SparkFirehoseListener directly, rather than implementing this class.
+ * 接口，用于侦听来自Spark调度程序的事件。大多数应用程序可能应该直接扩展SparkListener或SparkFirehoseListener，
+ * 而不是实现这个类。
  *
  * Note that this is an internal interface which might change in different Spark releases.
  */
@@ -296,9 +299,12 @@ private[spark] trait SparkListenerInterface {
  * :: DeveloperApi ::
  * A default implementation for `SparkListenerInterface` that has no-op implementations for
  * all callbacks.
+ * 一个默认的`SparkListenerInterface`的实现，对于所有的回调都没有实现具体的操作。
+ *
  *
  * Note that this is an internal interface which might change in different Spark releases.
  */
+/*抽象类，函数体都是空的*/
 @DeveloperApi
 abstract class SparkListener extends SparkListenerInterface {
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = { }

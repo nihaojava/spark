@@ -225,6 +225,7 @@ class SparkSubmitCommandBuilder extends AbstractCommandBuilder {
     return args;
   }
 
+  /*构建spark submit 命令，如：spark-submit -master yarn ...*/
   private List<String> buildSparkSubmitCommand(Map<String, String> env)
       throws IOException, IllegalArgumentException {
     // Load the properties file and check whether spark-submit will be running the app's driver
@@ -272,6 +273,7 @@ class SparkSubmitCommandBuilder extends AbstractCommandBuilder {
     }
 
     addPermGenSizeOpt(cmd);
+    /*执行org.apache.spark.deploy.SparkSubmit类的main方法*/
     cmd.add("org.apache.spark.deploy.SparkSubmit");
     cmd.addAll(buildSparkSubmitArgs());
     return cmd;

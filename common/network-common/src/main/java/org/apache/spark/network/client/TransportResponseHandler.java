@@ -44,24 +44,32 @@ import org.apache.spark.network.util.TransportFrameDecoder;
 /**
  * Handler that processes server responses, in response to requests issued from a
  * [[TransportClient]]. It works by tracking the list of outstanding requests (and their callbacks).
- *
+ * 此Hander用于处理server的responses，以回应TransportClient发送的请求。
+ * 它按照记录的outstanding request （发出的request）列表来工作。
+ * 也就是说，当收到response的时候，通过response在outstanding中找到相应的Callback回调函数，
+ * 然后调用Callback的onSuccess或onFaile
  * Concurrency: thread safe and can be called from multiple threads.
  */
 public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
   private static final Logger logger = LoggerFactory.getLogger(TransportResponseHandler.class);
 
-  private final Channel channel;
+  private final Channel channel;  //通道channel
 
+  /*用于缓存发出去的获取块请求信息，Map*/
   private final Map<StreamChunkId, ChunkReceivedCallback> outstandingFetches;
 
+  /*用于缓存发出去的RPC请求信息，Map*/
   private final Map<Long, RpcResponseCallback> outstandingRpcs;
 
+  /*用于缓存发出去的Stream请求信息，Queue*/
   private final Queue<StreamCallback> streamCallbacks;
   private volatile boolean streamActive;
 
   /** Records the time (in system nanoseconds) that the last fetch or RPC request was sent. */
+  /*记录最后发出request的时间（纳秒）*/
   private final AtomicLong timeOfLastRequestNs;
 
+  /**/
   public TransportResponseHandler(Channel channel) {
     this.channel = channel;
     this.outstandingFetches = new ConcurrentHashMap<>();
@@ -79,8 +87,11 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
     outstandingFetches.remove(streamChunkId);
   }
 
+  /*记录发送出去的requestId和相应的callback*/
   public void addRpcRequest(long requestId, RpcResponseCallback callback) {
+    /*更新最后的request时间*/
     updateTimeOfLastRequest();
+    /*记录requestId和相应的callback*/
     outstandingRpcs.put(requestId, callback);
   }
 
@@ -88,6 +99,7 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
     outstandingRpcs.remove(requestId);
   }
 
+  /*记录发送出去的StreamCallback*/
   public void addStreamCallback(StreamCallback callback) {
     timeOfLastRequestNs.set(System.nanoTime());
     streamCallbacks.offer(callback);
@@ -139,10 +151,15 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
     }
   }
 
+  /*处理server端发送过来的response，根据ResponseMessage的类别，
+  * 其中oneway类型的请求RequestMessage，不需要回复，其他3种的请求类型，都会回复成功或失败，
+  * 所以是6种*/
   @Override
   public void handle(ResponseMessage message) throws Exception {
+    /*获取块成功*/
     if (message instanceof ChunkFetchSuccess) {
       ChunkFetchSuccess resp = (ChunkFetchSuccess) message;
+      /**/
       ChunkReceivedCallback listener = outstandingFetches.get(resp.streamChunkId);
       if (listener == null) {
         logger.warn("Ignoring response for block {} from {} since it is not outstanding",
@@ -153,6 +170,7 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
         listener.onSuccess(resp.streamChunkId.chunkIndex, resp.body());
         resp.body().release();
       }
+     /*获取块失败*/
     } else if (message instanceof ChunkFetchFailure) {
       ChunkFetchFailure resp = (ChunkFetchFailure) message;
       ChunkReceivedCallback listener = outstandingFetches.get(resp.streamChunkId);
@@ -164,6 +182,7 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
         listener.onFailure(resp.streamChunkId.chunkIndex, new ChunkFetchFailureException(
           "Failure while fetching " + resp.streamChunkId + ": " + resp.errorString));
       }
+    /*RPC成功*/
     } else if (message instanceof RpcResponse) {
       RpcResponse resp = (RpcResponse) message;
       RpcResponseCallback listener = outstandingRpcs.get(resp.requestId);
@@ -178,6 +197,7 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
           resp.body().release();
         }
       }
+    /*RPC失败*/
     } else if (message instanceof RpcFailure) {
       RpcFailure resp = (RpcFailure) message;
       RpcResponseCallback listener = outstandingRpcs.get(resp.requestId);
@@ -188,6 +208,7 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
         outstandingRpcs.remove(resp.requestId);
         listener.onFailure(new RuntimeException(resp.errorString));
       }
+      /*获取Stream流成功*/
     } else if (message instanceof StreamResponse) {
       StreamResponse resp = (StreamResponse) message;
       StreamCallback callback = streamCallbacks.poll();
@@ -214,6 +235,7 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
       } else {
         logger.error("Could not find callback for StreamResponse.");
       }
+      /*获取Stream流失败*/
     } else if (message instanceof StreamFailure) {
       StreamFailure resp = (StreamFailure) message;
       StreamCallback callback = streamCallbacks.poll();
@@ -243,6 +265,7 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
   }
 
   /** Updates the time of the last request to the current system time. */
+  /*更新最后发出request的时间*/
   public void updateTimeOfLastRequest() {
     timeOfLastRequestNs.set(System.nanoTime());
   }

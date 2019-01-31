@@ -25,10 +25,12 @@ import org.apache.spark.scheduler.{ExternalClusterManager, SchedulerBackend, Tas
  */
 private[spark] class YarnClusterManager extends ExternalClusterManager {
 
+  /*此方法，用于根据用户传入的master 来匹配相应的ClusterManager*/
   override def canCreate(masterURL: String): Boolean = {
     masterURL == "yarn"
   }
 
+  /*创建TaskScheduler*/
   override def createTaskScheduler(sc: SparkContext, masterURL: String): TaskScheduler = {
     sc.deployMode match {
       case "cluster" => new YarnClusterScheduler(sc)
@@ -37,6 +39,7 @@ private[spark] class YarnClusterManager extends ExternalClusterManager {
     }
   }
 
+  /*根据deployMode，创建SchedulerBackend*/
   override def createSchedulerBackend(sc: SparkContext,
       masterURL: String,
       scheduler: TaskScheduler): SchedulerBackend = {

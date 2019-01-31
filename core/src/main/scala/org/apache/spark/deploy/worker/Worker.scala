@@ -514,7 +514,7 @@ private[deploy] class Worker(
             logInfo("Asked to kill unknown executor " + fullId)
         }
       }
-
+    /*启动Driver的消息*/
     case LaunchDriver(driverId, driverDesc) =>
       logInfo(s"Asked to launch driver $driverId")
       val driver = new DriverRunner(
@@ -527,6 +527,7 @@ private[deploy] class Worker(
         workerUri,
         securityMgr)
       drivers(driverId) = driver
+      /*start*/
       driver.start()
 
       coresUsed += driverDesc.cores

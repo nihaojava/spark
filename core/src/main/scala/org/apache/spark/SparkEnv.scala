@@ -48,6 +48,7 @@ import org.apache.spark.util.{RpcUtils, Utils}
  * including the serializer, RpcEnv, block manager, map output tracker, etc. Currently
  * Spark code finds the SparkEnv through a global variable, so all the threads can access the same
  * SparkEnv. It can be accessed by SparkEnv.get (e.g. after creating a SparkContext).
+ * 持有一个正在运行的saprk实例的所有运行时环境对象。（master或worker）
  *
  * NOTE: This is not intended for external use. This is exposed for Shark and may be made private
  *       in a future release.
@@ -153,6 +154,7 @@ object SparkEnv extends Logging {
 
   /**
    * Create a SparkEnv for the driver.
+   * 创建driver端的SparkEnv
    */
   private[spark] def createDriverEnv(
       conf: SparkConf,
@@ -163,9 +165,13 @@ object SparkEnv extends Logging {
     assert(conf.contains(DRIVER_HOST_ADDRESS),
       s"${DRIVER_HOST_ADDRESS.key} is not set on the driver!")
     assert(conf.contains("spark.driver.port"), "spark.driver.port is not set on the driver!")
+    /*Driver实例的Host*/
     val bindAddress = conf.get(DRIVER_BIND_ADDRESS)
+    /*Driver实例对外宣称的Host*/
     val advertiseAddress = conf.get(DRIVER_HOST_ADDRESS)
+    /*Driver端口*/
     val port = conf.get("spark.driver.port").toInt
+    /*I/O加密的密钥*/
     val ioEncryptionKey = if (conf.get(IO_ENCRYPTION_ENABLED)) {
       Some(CryptoStreamUtils.createKey(conf))
     } else {
@@ -188,6 +194,8 @@ object SparkEnv extends Logging {
   /**
    * Create a SparkEnv for an executor.
    * In coarse-grained mode, the executor provides an RpcEnv that is already instantiated.
+   * 创建Executor端的SparkEnv。
+   * 在粗粒度模式下，executor提供一个已经实例化的RpcEnv。
    */
   private[spark] def createExecutorEnv(
       conf: SparkConf,
@@ -213,6 +221,7 @@ object SparkEnv extends Logging {
 
   /**
    * Helper method to create a SparkEnv for a driver or an executor.
+   * 创建driver和executor端的SparkEnv的帮助方法。
    */
   private def create(
       conf: SparkConf,
@@ -241,7 +250,9 @@ object SparkEnv extends Logging {
       }
     }
 
+    /*生成systemName，如果是driver为sparkDriver，否则为sparkExecutor*/
     val systemName = if (isDriver) driverSystemName else executorSystemName
+    /*调用RpcEnv的create创建rpcEnv*/
     val rpcEnv = RpcEnv.create(systemName, bindAddress, advertiseAddress, port, conf,
       securityManager, clientMode = !isDriver)
 

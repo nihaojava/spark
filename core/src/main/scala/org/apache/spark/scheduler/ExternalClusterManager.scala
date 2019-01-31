@@ -30,6 +30,7 @@ private[spark] trait ExternalClusterManager {
    * @param masterURL the master URL
    * @return True if the cluster manager can create scheduler backend/
    */
+  /*检查此群集管理器实例是否可以创建调度器组件为某个masterURL。*/
   def canCreate(masterURL: String): Boolean
 
   /**

@@ -23,6 +23,7 @@ import com.google.common.primitives.Ints;
 
 /**
  * A central location that tracks all the settings we expose to users.
+ * 一个记录我们暴露给用户的所有设置的中心位置。
  */
 public class TransportConf {
 
@@ -150,6 +151,7 @@ public class TransportConf {
   /**
    * Whether to initialize FileDescriptor lazily or not. If true, file descriptors are
    * created only when data is going to be transferred. This can reduce the number of open files.
+   * 是否惰性地初始化文件描述符.如果为真，则文件描述符为只在要传输数据时创建。这可以减少打开文件的数量。
    */
   public boolean lazyFileDescriptor() {
     return conf.getBoolean(SPARK_NETWORK_IO_LAZYFD_KEY, true);

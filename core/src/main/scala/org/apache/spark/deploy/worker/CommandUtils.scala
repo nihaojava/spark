@@ -37,6 +37,8 @@ object CommandUtils extends Logging {
   /**
    * Build a ProcessBuilder based on the given parameters.
    * The `env` argument is exposed for testing.
+   * 根据给定的参数构建ProcessBuilder【用于new一个新的进程】。
+   * “环境”参数被公开以供测试。
    */
   def buildProcessBuilder(
       command: Command,
@@ -49,6 +51,7 @@ object CommandUtils extends Logging {
     val localCommand = buildLocalCommand(
       command, securityMgr, substituteArguments, classPaths, env)
     val commandSeq = buildCommandSeq(localCommand, memory, sparkHome)
+    /*new 一个ProcessBuilder*/
     val builder = new ProcessBuilder(commandSeq: _*)
     val environment = builder.environment()
     for ((key, value) <- localCommand.environment) {
@@ -102,6 +105,7 @@ object CommandUtils extends Logging {
   }
 
   /** Spawn a thread that will redirect a given stream to a file */
+  /*衍生一个线程，将一个给定的流重定向到一个文件*/
   def redirectStream(in: InputStream, file: File) {
     val out = new FileOutputStream(file, true)
     // TODO: It would be nice to add a shutdown hook here that explains why the output is

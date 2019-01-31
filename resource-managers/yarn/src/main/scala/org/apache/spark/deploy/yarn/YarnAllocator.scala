@@ -47,13 +47,18 @@ import org.apache.spark.util.{Clock, SystemClock, ThreadUtils}
 /**
  * YarnAllocator is charged with requesting containers from the YARN ResourceManager and deciding
  * what to do with containers when YARN fulfills these requests.
+ * YarnAllocator负责请求containers从YARN ResourceManager并且当YARN满足这些请求时决定如何处理containers。
+ *
  *
  * This class makes use of YARN's AMRMClient APIs. We interact with the AMRMClient in three ways:
  * * Making our resource needs known, which updates local bookkeeping about containers requested.
  * * Calling "allocate", which syncs our local container requests with the RM, and returns any
  *   containers that YARN has granted to us.  This also functions as a heartbeat.
  * * Processing the containers granted to us to possibly launch executors inside of them.
- *
+ * 这个类使用了YARN的AMRMClient api。我们以三种方式与AMRMClient交互：
+ * 1. 告知我们的资源需求，这将更新所请求的容器的本地簿记
+ * 2. 调用“allocate”，它将本地容器请求与RM同步，并返回YARN授予我们的所有容器。这也起到心跳的作用。
+ * 3. 处理授予我们可能在其中启动executors的容器。
  * The public methods of this class are thread-safe.  All methods that mutate state are
  * synchronized.
  */
@@ -104,13 +109,16 @@ private[yarn] class YarnAllocator(
     driverRef.askWithRetry[Int](RetrieveLastAllocatedExecutorId)
 
   // Queue to store the timestamp of failed executors
+  /*队列来存储失败的executors的时间戳*/
   private val failedExecutorsTimeStamps = new Queue[Long]()
 
   private var clock: Clock = new SystemClock
 
+  /*校验executor是否失败的时间间隔*/
   private val executorFailuresValidityInterval =
     sparkConf.get(EXECUTOR_ATTEMPT_FAILURE_VALIDITY_INTERVAL_MS).getOrElse(-1L)
 
+  /*根据是否启用动态分配获得*/
   @volatile private var targetNumExecutors =
     YarnSparkHadoopUtil.getInitialTargetExecutorNumber(sparkConf)
 
@@ -127,6 +135,7 @@ private[yarn] class YarnAllocator(
 
   // Keep track of which container is running which executor to remove the executors later
   // Visible for testing.
+  /*跟踪哪个container正在运行哪个executor，以便稍后删除executor*/
   private[yarn] val executorIdToContainer = new HashMap[String, Container]
 
   private var numUnexpectedContainerRelease = 0L
@@ -170,20 +179,23 @@ private[yarn] class YarnAllocator(
 
   def getNumExecutorsRunning: Int = numExecutorsRunning
 
+  /**/
   def getNumExecutorsFailed: Int = synchronized {
     val endTime = clock.getTimeMillis()
 
+    /*executorFailuresValidityInterval默认为-1，不会执行while循环*/
     while (executorFailuresValidityInterval > 0
       && failedExecutorsTimeStamps.nonEmpty
       && failedExecutorsTimeStamps.head < endTime - executorFailuresValidityInterval) {
       failedExecutorsTimeStamps.dequeue()
     }
-
+    /*失败的Executors个数*/
     failedExecutorsTimeStamps.size
   }
 
   /**
    * A sequence of pending container requests that have not yet been fulfilled.
+   * 尚未完成的等待的容器请求序列。
    */
   def getPendingAllocate: Seq[ContainerRequest] = getPendingAtLocation(ANY_HOST)
 
@@ -201,6 +213,9 @@ private[yarn] class YarnAllocator(
    * Request as many executors from the ResourceManager as needed to reach the desired total. If
    * the requested total is smaller than the current number of running executors, no executors will
    * be killed.
+   * 根据需要向ResourceManager请求尽可能多的executors，以达到所需的总数。
+   * 如果请求的总数小于正在运行的executors的当前数量，则不会杀死任何executors。
+   *
    * @param requestedTotal total number of containers requested
    * @param localityAwareTasks number of locality aware tasks to be used as container placement hint
    * @param hostToLocalTaskCount a map of preferred hostname to possible task counts to be used as
@@ -218,12 +233,14 @@ private[yarn] class YarnAllocator(
     this.numLocalityAwareTasks = localityAwareTasks
     this.hostToLocalTaskCounts = hostToLocalTaskCount
 
+    /*如果Driver申请的Executor数量 和 目标Executor数量不一致，更新targetNumExecutors，返回ture*/
     if (requestedTotal != targetNumExecutors) {
       logInfo(s"Driver requested a total number of $requestedTotal executor(s).")
       targetNumExecutors = requestedTotal
 
       // Update blacklist infomation to YARN ResouceManager for this application,
       // in order to avoid allocating new Containers on the problematic nodes.
+      /*为这个应用程序更新黑名单信息到YARN资源管理器，以避免在有问题的节点上分配新的容器。*/
       val blacklistAdditions = nodeBlacklist -- currentNodeBlacklist
       val blacklistRemovals = currentNodeBlacklist -- nodeBlacklist
       if (blacklistAdditions.nonEmpty) {
@@ -242,6 +259,7 @@ private[yarn] class YarnAllocator(
 
   /**
    * Request that the ResourceManager release the container running the specified executor.
+   * 请求ResourceManager释放运行指定executor的容器。
    */
   def killExecutor(executorId: String): Unit = synchronized {
     if (executorIdToContainer.contains(executorId)) {
@@ -256,28 +274,35 @@ private[yarn] class YarnAllocator(
   /**
    * Request resources such that, if YARN gives us all we ask for, we'll have a number of containers
    * equal to maxExecutors.
+   * 请求资源，这样，如果YARN满足了我们的所有要求，我们将有多个容器相当于maxexecutor。
    *
    * Deal with any containers YARN has granted to us by possibly launching executors in them.
+   * 处理任何YARN已批给我们的containers，可能会在其中启动executors
    *
    * This must be synchronized because variables read in this method are mutated by other methods.
+   * 这必须同步，因为在这个方法中读取的变量会被其他方法改变。
    */
+  /*请求资源*/
   def allocateResources(): Unit = synchronized {
+    /*向RM发送申请资源（API调用）*/
     updateResourceRequests()
 
     val progressIndicator = 0.1f
     // Poll the ResourceManager. This doubles as a heartbeat if there are no pending container
     // requests.
+    /*轮询ResourceManager。如果没有等待的容器请求，它将作为心跳*/
     val allocateResponse = amClient.allocate(progressIndicator)
-
+    /*从响应中获取RM给分配的Containers*/
     val allocatedContainers = allocateResponse.getAllocatedContainers()
 
+    /*如果申请到的Containers个数大于0*/
     if (allocatedContainers.size > 0) {
       logDebug("Allocated containers: %d. Current executor count: %d. Cluster resources: %s."
         .format(
           allocatedContainers.size,
           numExecutorsRunning,
           allocateResponse.getAvailableResources))
-
+      /*处理分配到的Containers，启动executor*/
       handleAllocatedContainers(allocatedContainers.asScala)
     }
 
@@ -293,9 +318,10 @@ private[yarn] class YarnAllocator(
   /**
    * Update the set of container requests that we will sync with the RM based on the number of
    * executors we have currently running and our target number of executors.
-   *
+   * 根据当前运行的执行器的数量和目标执行器的数量，更新将与RM同步的容器请求集。
    * Visible for testing.
    */
+  /*【在这里向RM发送ResourceRequests消息，是API调用】*/
   def updateResourceRequests(): Unit = {
     val pendingAllocate = getPendingAllocate
     val numPendingAllocate = pendingAllocate.size
@@ -358,6 +384,7 @@ private[yarn] class YarnAllocator(
       }
 
       newLocalityRequests.foreach { request =>
+        /*发送申请Container*/
         amClient.addContainerRequest(request)
       }
 
@@ -405,16 +432,21 @@ private[yarn] class YarnAllocator(
 
   /**
    * Handle containers granted by the RM by launching executors on them.
-   *
+   * 通过在RM上启动executors来处理RM授予的容器。
    * Due to the way the YARN allocation protocol works, certain healthy race conditions can result
    * in YARN granting containers that we no longer need. In this case, we release them.
+   * 由于YARN分配协议的工作方式，某些健康的竞态条件会导致YARN供应容器我们不再需要。
+   * 在这种情况下，我们释放它们。
    *
    * Visible for testing.
    */
+  /*处理分配到的Container*/
   def handleAllocatedContainers(allocatedContainers: Seq[Container]): Unit = {
     val containersToUse = new ArrayBuffer[Container](allocatedContainers.size)
 
     // Match incoming requests by host
+    /*拿allocatedContainer 和在allocatedContainers所在host上的container请求 匹配，
+    * 如果匹配上放入containersToUse，匹配不上放入remainingAfterHostMatches*/
     val remainingAfterHostMatches = new ArrayBuffer[Container]
     for (allocatedContainer <- allocatedContainers) {
       matchContainerToRequest(allocatedContainer, allocatedContainer.getNodeId.getHost,
@@ -422,6 +454,8 @@ private[yarn] class YarnAllocator(
     }
 
     // Match remaining by rack
+    /*拿allocatedContainer 和在allocatedContainers所在rack上的container请求 匹配，
+    * 如果匹配上放入containersToUse，匹配不上放入remainingAfterRackMatches*/
     val remainingAfterRackMatches = new ArrayBuffer[Container]
     for (allocatedContainer <- remainingAfterHostMatches) {
       val rack = RackResolver.resolve(conf, allocatedContainer.getNodeId.getHost).getNetworkLocation
@@ -430,12 +464,14 @@ private[yarn] class YarnAllocator(
     }
 
     // Assign remaining that are neither node-local nor rack-local
+    /*拿allocatedContainer 和ANY_HOST请求 匹配，
+    * 如果匹配上放入containersToUse，匹配不上放入remainingAfterOffRackMatches*/
     val remainingAfterOffRackMatches = new ArrayBuffer[Container]
     for (allocatedContainer <- remainingAfterRackMatches) {
       matchContainerToRequest(allocatedContainer, ANY_HOST, containersToUse,
         remainingAfterOffRackMatches)
     }
-
+    /*如果remainingAfterOffRackMatches不为空，释放其中的container*/
     if (!remainingAfterOffRackMatches.isEmpty) {
       logDebug(s"Releasing ${remainingAfterOffRackMatches.size} unneeded containers that were " +
         s"allocated to us")
@@ -443,9 +479,11 @@ private[yarn] class YarnAllocator(
         internalReleaseContainer(container)
       }
     }
-
+    /*在指派的containers中启动executors*/
     runAllocatedContainers(containersToUse)
 
+    /*记录日志，收到yarn分配的Containers个数，启动executors个数
+    * 【由此可见container和executor是1比1,1个container对应1个executor】*/
     logInfo("Received %d containers from YARN, launching executors on %d of them."
       .format(allocatedContainers.size, containersToUse.size))
   }
@@ -454,38 +492,45 @@ private[yarn] class YarnAllocator(
    * Looks for requests for the given location that match the given container allocation. If it
    * finds one, removes the request so that it won't be submitted again. Places the container into
    * containersToUse or remaining.
-   *
+   * 查找与给定容器分配匹配的给定位置的请求。
+   * 如果找到一个，删除请求，这样就不会再次提交了。将容器放入货柜箱内或剩余。
    * @param allocatedContainer container that was given to us by YARN
-   * @param location resource name, either a node, rack, or *
-   * @param containersToUse list of containers that will be used
-   * @param remaining list of containers that will not be used
+   * @param location resource name, either a node, rack, or *   资源名称
+   * @param containersToUse list of containers that will be used  将被使用的containers
+   * @param remaining list of containers that will not be used  剩余的containers
    */
+  /*分配到的Container匹配请求的*/
   private def matchContainerToRequest(
       allocatedContainer: Container,
-      location: String,
+      location: String,   /*resourceName*/
       containersToUse: ArrayBuffer[Container],
       remaining: ArrayBuffer[Container]): Unit = {
     // SPARK-6050: certain Yarn configurations return a virtual core count that doesn't match the
     // request; for example, capacity scheduler + DefaultResourceCalculator. So match on requested
     // memory, but use the asked vcore count for matching, effectively disabling matching on vcore
     // count.
+    /*allocatedContainer对应的资源(memory和core个数)*/
     val matchingResource = Resource.newInstance(allocatedContainer.getResource.getMemory,
           resource.getVirtualCores)
+    /*分配到的资源 匹配上的申请资源的请求 */
     val matchingRequests = amClient.getMatchingRequests(allocatedContainer.getPriority, location,
       matchingResource)
 
     // Match the allocation to a request
     if (!matchingRequests.isEmpty) {
+      /*匹配上一个*/
       val containerRequest = matchingRequests.get(0).iterator.next
       amClient.removeContainerRequest(containerRequest)
       containersToUse += allocatedContainer
     } else {
+      /*没有匹配上*/
       remaining += allocatedContainer
     }
   }
 
   /**
    * Launches executors in the allocated containers.
+   * 在指派的containers中启动executors
    */
   private def runAllocatedContainers(containersToUse: ArrayBuffer[Container]): Unit = {
     for (container <- containersToUse) {
@@ -547,6 +592,7 @@ private[yarn] class YarnAllocator(
   }
 
   // Visible for testing.
+  /*处理*/
   private[yarn] def processCompletedContainers(completedContainers: Seq[ContainerStatus]): Unit = {
     for (completedContainer <- completedContainers) {
       val containerId = completedContainer.getContainerId
@@ -667,6 +713,7 @@ private[yarn] class YarnAllocator(
 
   private def internalReleaseContainer(container: Container): Unit = {
     releasedContainers.add(container.getId())
+    /*调用RMClient的releaseAssignedContainer释放指定的container*/
     amClient.releaseAssignedContainer(container.getId())
   }
 

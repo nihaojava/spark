@@ -27,6 +27,7 @@ import org.apache.spark.network.client.TransportClient;
 
 /**
  * Handler for sendRPC() messages sent by {@link org.apache.spark.network.client.TransportClient}s.
+ * 处理TransportClient通过sendRPC()发过来的messages。
  */
 public abstract class RpcHandler {
 
@@ -43,7 +44,9 @@ public abstract class RpcHandler {
    * @param message The serialized bytes of the RPC.
    * @param callback Callback which should be invoked exactly once upon success or failure of the
    *                 RPC.
+   *                 RpcResponseCallback用于对请求处理结束后进行回调，无论处理成功或失败。
    */
+  /*接收单一的RPC消息*/
   public abstract void receive(
       TransportClient client,
       ByteBuffer message,
@@ -53,6 +56,7 @@ public abstract class RpcHandler {
    * Returns the StreamManager which contains the state about which streams are currently being
    * fetched by a TransportClient.
    */
+  /*获取StreamManager*/
   public abstract StreamManager getStreamManager();
 
   /**
@@ -64,6 +68,7 @@ public abstract class RpcHandler {
    *               of this RPC. This will always be the exact same object for a particular channel.
    * @param message The serialized bytes of the RPC.
    */
+  /*重载的receive，RpcResponseCallback为ONE_WAY_CALLBACK（不回复客户端）*/
   public void receive(TransportClient client, ByteBuffer message) {
     receive(client, message, ONE_WAY_CALLBACK);
   }
@@ -81,6 +86,7 @@ public abstract class RpcHandler {
 
   public void exceptionCaught(Throwable cause, TransportClient client) { }
 
+  /*只记录日志，不对客户端回复。*/
   private static class OneWayRpcCallback implements RpcResponseCallback {
 
     private static final Logger logger = LoggerFactory.getLogger(OneWayRpcCallback.class);

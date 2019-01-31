@@ -27,6 +27,7 @@ private[spark] trait Clock {
 
 /**
  * A clock backed by the actual time from the OS as reported by the `System` API.
+ * 由“系统”API报告的来自操作系统的实际时间所支持的时钟。
  */
 private[spark] class SystemClock extends Clock {
 

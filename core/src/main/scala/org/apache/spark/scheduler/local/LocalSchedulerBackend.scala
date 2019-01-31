@@ -42,6 +42,9 @@ private case class StopExecutor()
  * Calls to [[LocalSchedulerBackend]] are all serialized through LocalEndpoint. Using an
  * RpcEndpoint makes the calls on [[LocalSchedulerBackend]] asynchronous, which is necessary
  * to prevent deadlock between [[LocalSchedulerBackend]] and the [[TaskSchedulerImpl]].
+ * 对[[LocalSchedulerBackend]]的调用都是通过LocalEndpoint序列化的。
+ * 使用RpcEndpoint可以异步调用 [[LocalSchedulerBackend]]，
+ * 这对于防止[[LocalSchedulerBackend]]和[[TaskSchedulerImpl]]之间的死锁是必要的。
  */
 private[spark] class LocalEndpoint(
     override val rpcEnv: RpcEnv,
@@ -59,7 +62,9 @@ private[spark] class LocalEndpoint(
   private val executor = new Executor(
     localExecutorId, localExecutorHostname, SparkEnv.get, userClassPath, isLocal = true)
 
+  /*处理单项消息*/
   override def receive: PartialFunction[Any, Unit] = {
+    /*给下一个要调度的task分配资源并运行Task*/
     case ReviveOffers =>
       reviveOffers()
 
@@ -79,11 +84,15 @@ private[spark] class LocalEndpoint(
       executor.stop()
       context.reply(true)
   }
-
+  /*给下一个要调度的task分配资源并运行Task*/
   def reviveOffers() {
+    /*因为local模式只有一个executor，所以只new了一个WorkerOffer，并加到序列offers*/
     val offers = IndexedSeq(new WorkerOffer(localExecutorId, localExecutorHostname, freeCores))
+    /*调用resourceOffers给task分配资源*/
     for (task <- scheduler.resourceOffers(offers).flatten) {
+      /*将闲置的core-1*/
       freeCores -= scheduler.CPUS_PER_TASK
+      /*调用executor的launchTask运行task*/
       executor.launchTask(executorBackend, task)
     }
   }
@@ -135,7 +144,7 @@ private[spark] class LocalSchedulerBackend(
   override def stop() {
     stop(SparkAppHandle.State.FINISHED)
   }
-
+  /*向localEndpoint发送ReviveOffers消息*/
   override def reviveOffers() {
     localEndpoint.send(ReviveOffers)
   }

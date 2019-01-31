@@ -71,6 +71,7 @@ private[spark] object CoarseGrainedClusterMessages {
   }
 
   // Internal messages in driver
+  /*driver内部消息，自己给自己发送的*/
   case object ReviveOffers extends CoarseGrainedClusterMessage
 
   case object StopDriver extends CoarseGrainedClusterMessage

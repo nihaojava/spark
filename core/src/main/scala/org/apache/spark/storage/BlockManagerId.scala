@@ -47,6 +47,7 @@ class BlockManagerId private (
   /*只用在反序列化的时候，需要一个无参构造函数*/
   private def this() = this(null, null, 0, None)  // For deserialization only
 
+  /**/
   def executorId: String = executorId_
 
   if (null != host_) {

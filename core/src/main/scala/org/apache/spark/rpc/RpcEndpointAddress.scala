@@ -21,12 +21,16 @@ import org.apache.spark.SparkException
 
 /**
  * An address identifier for an RPC endpoint.
+ * 一个RPC endpoint的地址
  *
  * The `rpcAddress` may be null, in which case the endpoint is registered via a client-only
  * connection and can only be reached via the client that sent the endpoint reference.
+ * `rpcAddress`可能为null，在这种情况下，endpoint是通过一个客户端连接注册的 ？
  *
  * @param rpcAddress The socket address of the endpoint. It's `null` when this address pointing to
  *                   an endpoint in a client `NettyRpcEnv`.
+ *                   endpoint的socket地址，当此地址指向一个client端`NettyRpcEnv`中的endpoint时为null。
+ *                   也就是说在同一个NettyRpcEnv环境中，就是null
  * @param name Name of the endpoint.
  */
 private[spark] case class RpcEndpointAddress(rpcAddress: RpcAddress, name: String) {
@@ -37,9 +41,12 @@ private[spark] case class RpcEndpointAddress(rpcAddress: RpcAddress, name: Strin
     this(RpcAddress(host, port), name)
   }
 
+  /**/
   override val toString = if (rpcAddress != null) {
+    /*远端地址*/
       s"spark://$name@${rpcAddress.host}:${rpcAddress.port}"
     } else {
+    /*本地地址*/
       s"spark-client://$name"
     }
 }

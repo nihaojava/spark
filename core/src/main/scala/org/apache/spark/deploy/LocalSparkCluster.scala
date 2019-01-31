@@ -31,6 +31,8 @@ import org.apache.spark.util.Utils
  * spark.deploy.master.Master and spark.deploy.worker.Workers in the same JVMs). Executors launched
  * by the Workers still run in separate JVMs. This can be used to test distributed operation and
  * fault recovery without spinning up a lot of processes.
+ * 测试类，它创建一个单独的进程（Master 和 workers运行在这个进程中）。Executor任然运行在一个单独的jvm。
+ * 这可以用于测试分布式操作和故障恢复，而不需要旋转很多进程。
  */
 private[spark]
 class LocalSparkCluster(
@@ -55,6 +57,7 @@ class LocalSparkCluster(
       .set("spark.shuffle.service.enabled", "false")
 
     /* Start the Master */
+    /*启动master*/
     val (rpcEnv, webUiPort, _) = Master.startRpcEnvAndEndpoint(localHostname, 0, 0, _conf)
     masterWebUIPort = webUiPort
     masterRpcEnvs += rpcEnv

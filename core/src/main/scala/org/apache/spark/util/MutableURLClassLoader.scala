@@ -24,6 +24,7 @@ import scala.collection.JavaConverters._
 
 /**
  * URL class loader that exposes the `addURL` and `getURLs` methods in URLClassLoader.
+ * 继承了URLClassLoader，暴露了 `addURL` and `getURLs`两个方法。
  */
 private[spark] class MutableURLClassLoader(urls: Array[URL], parent: ClassLoader)
   extends URLClassLoader(urls, parent) {

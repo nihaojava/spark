@@ -23,6 +23,7 @@ import org.apache.spark.network.buffer.ManagedBuffer;
 
 /**
  * Abstract class for messages which optionally contain a body kept in a separate buffer.
+ * 消息的抽象类它可选包含一个body，此body保存在buffer中
  */
 public abstract class AbstractMessage implements Message {
   private final ManagedBuffer body;

@@ -50,7 +50,7 @@ private case class DeserializedMemoryEntry[T]( //反序列化后的MemoryEntry,�
   val memoryMode: MemoryMode = MemoryMode.ON_HEAP
 }
 private case class SerializedMemoryEntry[T]( //序列化后的MemoryEntry
-    buffer: ChunkedByteBuffer, //块ByteBuffer，对ByteBuffer的封装
+    buffer: ChunkedByteBuffer, //ByteBuffer数组
     memoryMode: MemoryMode,
     classTag: ClassTag[T]) extends MemoryEntry[T] {
   def size: Long = buffer.size
@@ -184,7 +184,7 @@ private[spark] class MemoryStore(
       val entry = new SerializedMemoryEntry[T](bytes, memoryMode, implicitly[ClassTag[T]])
       // 将SerializedMemoryEntry放入entries
       entries.synchronized {
-        entries.put(blockId, entry)
+        entries.put(blockId, entry) //将block存入内存
       }
       /*记录日志：此block存储到memory（预测 占用的内存size，剩余的存储空间maxMemory - blocksMemoryUsed）*/
       logInfo("Block %s stored as bytes in memory (estimated size %s, free %s)".format(
@@ -555,7 +555,7 @@ private[spark] class MemoryStore(
    *（驱逐）同一个RDD中的另外一个block，（对于不适合存储到内存中的RDD，这样会导致不划算的循环替换模式，
    * 这是我们想避免的。）这两种情况下会失败。
    *
-   * @param blockId the ID of the block we are freeing space for, if any // 我们此block释放空间
+   * @param blockId the ID of the block we are freeing space for, if any // 我们为此block释放空间
    * @param space the size of this block  // block大小
    * @param memoryMode the type of memory to free (on- or off-heap) // memory类型
    * @return the amount of memory (in bytes) freed by eviction // 返回通过驱逐释放的内存大小（Byte）
@@ -585,11 +585,12 @@ private[spark] class MemoryStore(
           val pair = iterator.next()
           val blockId = pair.getKey
           val entry = pair.getValue
+          /*帅选出符合条件的blockid们*/
           if (blockIsEvictable(blockId, entry)) {
             // We don't want to evict blocks which are currently being read, so we need to obtain
             // an exclusive write lock on blocks which are candidates for eviction. We perform a
             // non-blocking "tryLock" here in order to ignore blocks which are locked for reading:
-            // 获取写锁，是为了不对有线程正在读或写的block进行驱逐
+            // 获取写锁【非阻塞获取blocking = false】，是为了不对有线程正在读或写的block进行驱逐
             if (blockInfoManager.lockForWriting(blockId, blocking = false).isDefined) {
               /*将blockId加入待驱逐列表，更新可释放的内存freedMemory*/
               selectedBlocks += blockId
@@ -605,9 +606,12 @@ private[spark] class MemoryStore(
           case DeserializedMemoryEntry(values, _, _) => Left(values)
           case SerializedMemoryEntry(buffer, _, _) => Right(buffer)
         }
-        /*调用BlockManager的方法 ？*/
+        /*调用BlockManager的dropFromMemory，如果storageLevel中useDisk=true，
+        那就将此block写到disk，然后再从内存中删除；
+        否则直接从删除此block*/
         val newEffectiveStorageLevel =
           blockEvictionHandler.dropFromMemory(blockId, () => data)(entry.classTag)
+        /*根据新的StorageLevel判断是移到其他存储了，还是删除了*/
         if (newEffectiveStorageLevel.isValid) {
           // The block is still present in at least one store, so release the lock
           // but don't delete the block info

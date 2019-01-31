@@ -59,12 +59,15 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
   private final Channel channel;
 
   /** Client on the same channel allowing us to talk back to the requester. */
+  /*同一通道上的客户机允许我们与请求者进行回调。*/
   private final TransportClient reverseClient;
 
   /** Handles all RPC messages. */
+  /*处理所有的RPC消息*/
   private final RpcHandler rpcHandler;
 
   /** Returns each chunk part of a stream. */
+  /*返回一个stream一部分的*/
   private final StreamManager streamManager;
 
   public TransportRequestHandler(
@@ -99,9 +102,13 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
     rpcHandler.channelInactive(reverseClient);
   }
 
+  /*重写MessageHandler的handle*/
+  /*处理4种具体的RequestMessage
+  （都实现了RequestMessage接口，没有任何方法，只表示消息从client到server）*/
   @Override
   public void handle(RequestMessage request) {
     if (request instanceof ChunkFetchRequest) {
+      /*处理块获取请求*/
       processFetchRequest((ChunkFetchRequest) request);
     } else if (request instanceof RpcRequest) {
       processRpcRequest((RpcRequest) request);
@@ -114,6 +121,7 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
     }
   }
 
+  /*处理ChunkFetchRequest类型的消息，块获取请求*/
   private void processFetchRequest(final ChunkFetchRequest req) {
     if (logger.isTraceEnabled()) {
       logger.trace("Received req from {} to fetch block {}", getRemoteAddress(channel),
@@ -122,22 +130,28 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
 
     ManagedBuffer buf;
     try {
+      /*校验客户端是否有权利从给定的流中读取数据*/
       streamManager.checkAuthorization(reverseClient, req.streamChunkId.streamId);
+      /*将一个流和一条客户端的TCP连接关联起来*/
       streamManager.registerChannel(channel, req.streamChunkId.streamId);
+      /*获取req.streamChunkId中指定的stream中的数据块buf*/
       buf = streamManager.getChunk(req.streamChunkId.streamId, req.streamChunkId.chunkIndex);
     } catch (Exception e) {
+      /*如果发生异常，构造ChunkFetchFailure，respond给请求的客户端*/
       logger.error(String.format("Error opening block %s for request from %s",
         req.streamChunkId, getRemoteAddress(channel)), e);
       respond(new ChunkFetchFailure(req.streamChunkId, Throwables.getStackTraceAsString(e)));
       return;
     }
-
+    /*成功，构造ChunkFetchSuccess，respond给请求的客户端*/
     respond(new ChunkFetchSuccess(req.streamChunkId, buf));
   }
 
+  /*处理StreamRequest类型的消息*/
   private void processStreamRequest(final StreamRequest req) {
     ManagedBuffer buf;
     try {
+      /*根据streamId获取到数据流，封装为FileSegmentManagedBuffer*/
       buf = streamManager.openStream(req.streamId);
     } catch (Exception e) {
       logger.error(String.format(
@@ -145,7 +159,7 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
       respond(new StreamFailure(req.streamId, Throwables.getStackTraceAsString(e)));
       return;
     }
-
+    /*响应*/
     if (buf != null) {
       respond(new StreamResponse(req.streamId, buf.size(), buf));
     } else {
@@ -154,8 +168,12 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
     }
   }
 
+  /*处理RPC请求*/
   private void processRpcRequest(final RpcRequest req) {
     try {
+      /*将发送消息的客户端、RpcRequest消息体的内容及一个RpcResponseCallback类型的匿名内部类作为参数传递给
+      * rpcHandler的receive方法。
+      * 也就是说真正处理RpcRequest类型消息的是rpcHandler，而非TransportRequestHandler*/
       rpcHandler.receive(reverseClient, req.body().nioByteBuffer(), new RpcResponseCallback() {
         @Override
         public void onSuccess(ByteBuffer response) {
@@ -175,6 +193,7 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
     }
   }
 
+  /*处理无需回复的RPC请求*/
   private void processOneWayMessage(OneWayMessage req) {
     try {
       rpcHandler.receive(reverseClient, req.body().nioByteBuffer());
@@ -191,13 +210,17 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
    */
   private void respond(final Encodable result) {
     final SocketAddress remoteAddress = channel.remoteAddress();
+    /*writeAndFlush发送消息result*/
     channel.writeAndFlush(result).addListener(
+            /*future添加listener监听器，future有结果（不管成功还是失败）的时候operationComplete*/
       new ChannelFutureListener() {
+        /*只是记录日志*/
         @Override
         public void operationComplete(ChannelFuture future) throws Exception {
           if (future.isSuccess()) {
             logger.trace("Sent result {} to client {}", result, remoteAddress);
           } else {
+            /*记录异常信息*/
             logger.error(String.format("Error sending result %s to %s; closing connection",
               result, remoteAddress), future.cause());
             channel.close();

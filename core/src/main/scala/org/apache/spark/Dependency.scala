@@ -27,6 +27,7 @@ import org.apache.spark.shuffle.ShuffleHandle
 /**
  * :: DeveloperApi ::
  * Base class for dependencies.
+ * dependencies 的基类，只有一个方法rdd，返回当前依赖的RDD
  */
 @DeveloperApi
 abstract class Dependency[T] extends Serializable {
@@ -72,29 +73,32 @@ abstract class NarrowDependency[T](_rdd: RDD[T]) extends Dependency[T] {
  */
 @DeveloperApi
 class ShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
-    @transient private val _rdd: RDD[_ <: Product2[K, V]],
-    val partitioner: Partitioner,
-    val serializer: Serializer = SparkEnv.get.serializer,
-    val keyOrdering: Option[Ordering[K]] = None,
-    val aggregator: Option[Aggregator[K, V, C]] = None,
-    val mapSideCombine: Boolean = false)
+    @transient private val _rdd: RDD[_ <: Product2[K, V]],  /*要求RDD中的元素必须是Product2[K, V]及其子类*/
+    val partitioner: Partitioner, /*分区器*/
+    val serializer: Serializer = SparkEnv.get.serializer, /*java序列化器*/
+    val keyOrdering: Option[Ordering[K]] = None, /*对key进行排序的排序器*/
+    val aggregator: Option[Aggregator[K, V, C]] = None, /*对map任务的输出数据进行聚合的聚合器*/
+    val mapSideCombine: Boolean = false)  /*是否在map端进行合并，默认为false*/
   extends Dependency[Product2[K, V]] {
 
   override def rdd: RDD[Product2[K, V]] = _rdd.asInstanceOf[RDD[Product2[K, V]]]
 
-  //key,value 的class类型
+  //key,value K，V的class类名
   private[spark] val keyClassName: String = reflect.classTag[K].runtimeClass.getName
   private[spark] val valueClassName: String = reflect.classTag[V].runtimeClass.getName
   // Note: It's possible that the combiner class tag is null, if the combineByKey
   // methods in PairRDDFunctions are used instead of combineByKeyWithClassTag.
+  /*结合器C的类名*/
   private[spark] val combinerClassName: Option[String] =
     Option(reflect.classTag[C]).map(_.runtimeClass.getName)
 
+  /*当前ShuffleDependency的身份标识，val会在new的时候只执行一次，其他val属性也是*/
   val shuffleId: Int = _rdd.context.newShuffleId()
   // 将此ShuffleDependency注册到shuffleManager
   val shuffleHandle: ShuffleHandle = _rdd.context.env.shuffleManager.registerShuffle(
     shuffleId, _rdd.partitions.length, this)
 
+  /*将自己注册到cleaner，当自己被gc回收后，清理相关的shuffle的数据*/
   _rdd.sparkContext.cleaner.foreach(_.registerShuffleForCleanup(this))
 }
 

@@ -86,6 +86,7 @@ class LauncherServer implements Closeable {
   /** For creating secrets used for communication with child processes. */
   private static final SecureRandom RND = new SecureRandom();
 
+  /*serverInstance是共享同一个，【也就是说一个用户程序中 可以提交多个】*/
   private static volatile LauncherServer serverInstance;
 
   /**
@@ -127,6 +128,8 @@ class LauncherServer implements Closeable {
     ServerSocket server = new ServerSocket();
     try {
       server.setReuseAddress(true);
+      /*【注意port为0，表示从从本地系统中找一个可用端口，而不用写死，
+      查看具体使用了哪个端口server.getLocalPort()】*/
       server.bind(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0));
 
       this.clients = new ArrayList<>();
@@ -159,6 +162,7 @@ class LauncherServer implements Closeable {
    */
   ChildProcAppHandle newAppHandle(String secret) {
     ChildProcAppHandle handle = new ChildProcAppHandle(secret, this);
+    /*将handle和秘钥放入pending，ServerConnection收到client端的信息后，会来取handle*/
     ChildProcAppHandle existing = pending.putIfAbsent(secret, handle);
     CommandBuilderUtils.checkState(existing == null, "Multiple handles with the same secret.");
     return handle;
@@ -220,6 +224,7 @@ class LauncherServer implements Closeable {
     unref();
   }
 
+  /*接收客户端LaunchBackend的连接*/
   private void acceptConnections() {
     try {
       while (running) {
@@ -235,7 +240,9 @@ class LauncherServer implements Closeable {
             }
           }
         };
+        /*保存和客户端LaunchBackend的连接*/
         ServerConnection clientConnection = new ServerConnection(client, timeout);
+        /*创建一个线程处理*/
         Thread clientThread = factory.newThread(clientConnection);
         synchronized (timeout) {
           clientThread.start();
@@ -279,9 +286,11 @@ class LauncherServer implements Closeable {
     return sb.toString();
   }
 
+  /*用于保持Launcherserver和Launcherbackend的连接*/
   private class ServerConnection extends LauncherConnection {
 
     private TimerTask timeout;
+    /*指向子进程的句柄*/
     private ChildProcAppHandle handle;
 
     ServerConnection(Socket socket, TimerTask timeout) throws IOException {
@@ -289,6 +298,7 @@ class LauncherServer implements Closeable {
       this.timeout = timeout;
     }
 
+    /*实现的处理消息的方法，接收到消息就会调用此方法（线程的run会调用此方法）*/
     @Override
     protected void handle(Message msg) throws IOException {
       try {
@@ -300,6 +310,7 @@ class LauncherServer implements Closeable {
           if (handle != null) {
             handle.setConnection(this);
             handle.setState(SparkAppHandle.State.CONNECTED);
+            /*根据秘钥从pending中得到handle*/
             this.handle = handle;
           } else {
             throw new IllegalArgumentException("Received Hello for unknown client.");

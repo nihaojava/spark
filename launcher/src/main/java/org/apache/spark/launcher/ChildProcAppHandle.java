@@ -26,6 +26,7 @@ import java.util.logging.Logger;
 
 /**
  * Handle implementation for monitoring apps started as a child process.
+ * 用于监控作为子进程启动的应用程序的句柄实现。
  */
 class ChildProcAppHandle implements SparkAppHandle {
 
@@ -34,6 +35,8 @@ class ChildProcAppHandle implements SparkAppHandle {
   private final String secret;
   private final LauncherServer server;
 
+  /*指向子进程Process
+  * 用于kill子进程 或 重定向子进程的sout和serr*/
   private Process childProc;
   private boolean disposed;
   private LauncherConnection connection;
@@ -139,7 +142,9 @@ class ChildProcAppHandle implements SparkAppHandle {
     return connection;
   }
 
+  /*会触发fireEvent*/
   void setState(State s) {
+    /*final、killed 等返回true*/
     if (!state.isFinal()) {
       state = s;
       fireEvent(false);
@@ -149,17 +154,21 @@ class ChildProcAppHandle implements SparkAppHandle {
     }
   }
 
+  /*会触发fireEvent*/
   void setAppId(String appId) {
     this.appId = appId;
     fireEvent(true);
   }
 
+  /*触发执行listener的事件*/
   private synchronized void fireEvent(boolean isInfoChanged) {
     if (listeners != null) {
       for (Listener l : listeners) {
         if (isInfoChanged) {
+          /*调用listener的infoChanged，要想使用需要用户去实现此方法*/
           l.infoChanged(this);
         } else {
+          /*调用listener的stateChanged，要想使用需要用户去实现此方法*/
           l.stateChanged(this);
         }
       }

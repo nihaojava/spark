@@ -19,6 +19,7 @@ package org.apache.spark.deploy.yarn
 
 import scala.collection.mutable.ArrayBuffer
 
+/*构造ApplicationMaster时传入的参数*/
 class ApplicationMasterArguments(val args: Array[String]) {
   var userJar: String = null
   var userClass: String = null

@@ -45,6 +45,8 @@ import org.apache.spark.network.util.TransportFrameDecoder;
  * Contains the context to create a {@link TransportServer}, {@link TransportClientFactory}, and to
  * setup Netty Channel pipelines with a
  * {@link org.apache.spark.network.server.TransportChannelHandler}.
+ * 传输上下文，包含了用于创建 {@link TransportServer}和 {@link TransportClientFactory}的上下文信息并
+ * 支持使用TransportChannelHandler设置Netty Channel pipelines
  *
  * There are two communication protocols that the TransportClient provides, control-plane RPCs and
  * data-plane "chunk fetching". The handling of the RPCs is performed outside of the scope of the
@@ -58,12 +60,12 @@ import org.apache.spark.network.util.TransportFrameDecoder;
 public class TransportContext {
   private static final Logger logger = LoggerFactory.getLogger(TransportContext.class);
 
-  private final TransportConf conf;
-  private final RpcHandler rpcHandler;
-  private final boolean closeIdleConnections;
+  private final TransportConf conf;   //Transport配置
+  private final RpcHandler rpcHandler;  //服务端处理程序
+  private final boolean closeIdleConnections; //关闭闲置的连接，默认为flase
 
-  private final MessageEncoder encoder;
-  private final MessageDecoder decoder;
+  private final MessageEncoder encoder; //编码器
+  private final MessageDecoder decoder; //解码器
 
   public TransportContext(TransportConf conf, RpcHandler rpcHandler) {
     this(conf, rpcHandler, false);
@@ -74,7 +76,7 @@ public class TransportContext {
       RpcHandler rpcHandler,
       boolean closeIdleConnections) {
     this.conf = conf;
-    this.rpcHandler = rpcHandler;
+    this.rpcHandler = rpcHandler; /*RPC请求处理器*/
     this.encoder = new MessageEncoder();
     this.decoder = new MessageDecoder();
     this.closeIdleConnections = closeIdleConnections;
@@ -84,16 +86,21 @@ public class TransportContext {
    * Initializes a ClientFactory which runs the given TransportClientBootstraps prior to returning
    * a new Client. Bootstraps will be executed synchronously, and must run successfully in order
    * to create a Client.
+   * 初始化一个ClientFactory，它在return a new Client前运行给定的TransportClientBootstrap。
+   * 引导将同步执行，并且为了创建Client必须运行成功。
    */
+  /*创建一个TransportClientFactory*/
   public TransportClientFactory createClientFactory(List<TransportClientBootstrap> bootstraps) {
     return new TransportClientFactory(this, bootstraps);
   }
 
+  /*创建一个TransportClientFactory*/
   public TransportClientFactory createClientFactory() {
     return createClientFactory(Lists.<TransportClientBootstrap>newArrayList());
   }
 
   /** Create a server which will attempt to bind to a specific port. */
+  /*创建TransportServer，并绑定指定端口*/
   public TransportServer createServer(int port, List<TransportServerBootstrap> bootstraps) {
     return new TransportServer(this, null, port, rpcHandler, bootstraps);
   }
@@ -129,11 +136,13 @@ public class TransportContext {
    * be used to communicate on this channel. The TransportClient is directly associated with a
    * ChannelHandler to ensure all users of the same channel get the same TransportClient object.
    */
+  /*初始化一个client或server Netty channelpipeline*/
   public TransportChannelHandler initializePipeline(
       SocketChannel channel,
       RpcHandler channelRpcHandler) {
     try {
       TransportChannelHandler channelHandler = createChannelHandler(channel, channelRpcHandler);
+      /*pipeline添加ChannelHander*/
       channel.pipeline()
         .addLast("encoder", encoder)
         .addLast(TransportFrameDecoder.HANDLER_NAME, NettyUtils.createFrameDecoder())
@@ -153,12 +162,18 @@ public class TransportContext {
    * Creates the server- and client-side handler which is used to handle both RequestMessages and
    * ResponseMessages. The channel is expected to have been successfully created, though certain
    * properties (such as the remoteAddress()) may not be available yet.
+   * 创建server或client端handler，它用于处理RequestMessages和ResponseMessages。
    */
+  /**/
   private TransportChannelHandler createChannelHandler(Channel channel, RpcHandler rpcHandler) {
+    /*创建TransportResponseHandler*/
     TransportResponseHandler responseHandler = new TransportResponseHandler(channel);
+    /*创建TransportClient*/
     TransportClient client = new TransportClient(channel, responseHandler);
+    /*创建TransportRequestHandler*/
     TransportRequestHandler requestHandler = new TransportRequestHandler(channel, client,
       rpcHandler);
+    /*传入client、responseHandler、requestHandler构造TransportChannelHandler*/
     return new TransportChannelHandler(client, responseHandler, requestHandler,
       conf.connectionTimeoutMs(), closeIdleConnections);
   }

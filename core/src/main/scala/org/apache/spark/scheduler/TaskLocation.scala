@@ -21,6 +21,9 @@ package org.apache.spark.scheduler
  * A location where a task should run. This can either be a host or a (host, executorID) pair.
  * In the latter case, we will prefer to launch the task on that executorID, but our next level
  * of preference will be executors on the same host if this is not possible.
+ * 任务应该运行的位置。这可以是主机对，也可以是(host，executorID)对。
+ * 在后一种情况下，我们更愿意在executorID上启动任务，但如果不可能的话，
+ * 我们的下一个首选级别将是同一主机上的executorID。
  */
 private[spark] sealed trait TaskLocation {
   def host: String
@@ -28,6 +31,7 @@ private[spark] sealed trait TaskLocation {
 
 /**
  * A location that includes both a host and an executor id on that host.
+ * 包含主机和该主机上的executorid的位置。
  */
 private [spark]
 case class ExecutorCacheTaskLocation(override val host: String, executorId: String)
@@ -37,6 +41,7 @@ case class ExecutorCacheTaskLocation(override val host: String, executorId: Stri
 
 /**
  * A location on a host.
+ * 主机上的一个位置。
  */
 private [spark] case class HostTaskLocation(override val host: String) extends TaskLocation {
   override def toString: String = host
@@ -44,6 +49,7 @@ private [spark] case class HostTaskLocation(override val host: String) extends T
 
 /**
  * A location on a host that is cached by HDFS.
+ * 由HDFS缓存的主机上的一个位置。
  */
 private [spark] case class HDFSCacheTaskLocation(override val host: String) extends TaskLocation {
   override def toString: String = TaskLocation.inMemoryLocationTag + host

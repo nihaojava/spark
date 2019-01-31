@@ -93,6 +93,7 @@ private class ClientEndpoint(
           driverArgs.cores,
           driverArgs.supervise,
           command)
+        /*向master发送消息，提交Driver，会先放入Master的waitingDrivers，然后调度启动Driver*/
         ayncSendToMasterAndForwardReply[SubmitDriverResponse](
           RequestSubmitDriver(driverDescription))
 
@@ -208,11 +209,13 @@ private class ClientEndpoint(
 
 /**
  * Executable utility for starting and terminating drivers inside of a standalone cluster.
+ * 用于启动和终止独立集群内的drivers的可执行实用程序。
  */
 object Client {
   def main(args: Array[String]) {
     // scalastyle:off println
     if (!sys.props.contains("SPARK_SUBMIT")) {
+      /*此客户端已被弃用，将在Spark的未来版本中删除*/
       println("WARNING: This client is deprecated and will be removed in a future version of Spark")
       println("Use ./bin/spark-submit with \"--master spark://host:port\"")
     }

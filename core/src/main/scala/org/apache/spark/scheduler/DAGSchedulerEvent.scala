@@ -31,9 +31,13 @@ import org.apache.spark.util.{AccumulatorV2, CallSite}
  * submitted) but there is a single "logic" thread that reads these events and takes decisions.
  * This greatly simplifies synchronization.
  */
+/*可以由DAGScheduler处理的事件类型。DAGScheduler使用事件队列体系结构，
+其中任何线程都可以发布事件(例如，完成任务或提交新作业)，但是只有一个“逻辑”线程可以读取这些事件并做出决策。
+这大大简化了同步。*/
 private[scheduler] sealed trait DAGSchedulerEvent
 
 /** A result-yielding job was submitted on a target RDD */
+/*在目标RDD上提交了一个产生结果的作业*/
 private[scheduler] case class JobSubmitted(
     jobId: Int,
     finalRDD: RDD[_],
@@ -45,6 +49,7 @@ private[scheduler] case class JobSubmitted(
   extends DAGSchedulerEvent
 
 /** A map stage as submitted to run as a separate job */
+/*map stage*/
 private[scheduler] case class MapStageSubmitted(
   jobId: Int,
   dependency: ShuffleDependency[_, _, _],
@@ -67,6 +72,7 @@ case class BeginEvent(task: Task[_], taskInfo: TaskInfo) extends DAGSchedulerEve
 private[scheduler]
 case class GettingResultEvent(taskInfo: TaskInfo) extends DAGSchedulerEvent
 
+/*完成*/
 private[scheduler] case class CompletionEvent(
     task: Task[_],
     reason: TaskEndReason,

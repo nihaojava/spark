@@ -26,15 +26,18 @@ import org.apache.spark.util.Utils
 
 /**
  * StreamManager implementation for serving files from a NettyRpcEnv.
- *
+ * StreamManager的实现，用于为NettyRpcEnv提供文件服务。
  * Three kinds of resources can be registered in this manager, all backed by actual files:
+ * 有三种类型的资源会注册到此manager，所有支持的实际文件:
  *
- * - "/files": a flat list of files; used as the backend for [[SparkContext.addFile]].
- * - "/jars": a flat list of files; used as the backend for [[SparkContext.addJar]].
+ * - "/files": a flat list of files; used as the backend for [[org.apache.spark.SparkContext.addFile]].
+ * - "/jars": a flat list of files; used as the backend for [[org.apache.spark.SparkContext.addJar]].
  * - arbitrary directories; all files under the directory become available through the manager,
  *   respecting the directory's hierarchy.
+ *   任意目录，目录下的所有文件都可以通过此manager获得，按照目录结构。
  *
  * Only streaming (openStream) is supported.
+ * 只支持流(openStream)。
  */
 private[netty] class NettyStreamManager(rpcEnv: NettyRpcEnv)
   extends StreamManager with RpcEnvFileServer {
@@ -47,6 +50,8 @@ private[netty] class NettyStreamManager(rpcEnv: NettyRpcEnv)
     throw new UnsupportedOperationException()
   }
 
+  /*打开文件流*/
+  /*streamId: 如/files/a.txt */
   override def openStream(streamId: String): ManagedBuffer = {
     val Array(ftype, fname) = streamId.stripPrefix("/").split("/", 2)
     val file = ftype match {
@@ -70,6 +75,7 @@ private[netty] class NettyStreamManager(rpcEnv: NettyRpcEnv)
     require(existingPath == null || existingPath == file,
       s"File ${file.getName} was already registered with a different path " +
         s"(old path = $existingPath, new path = $file")
+    /* spark://host:port/files/ */
     s"${rpcEnv.address.toSparkURL}/files/${Utils.encodeFileNameToURIRawPath(file.getName())}"
   }
 

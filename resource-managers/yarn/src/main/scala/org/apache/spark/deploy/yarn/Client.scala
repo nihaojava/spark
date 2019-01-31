@@ -73,11 +73,16 @@ private[spark] class Client(
   private val isClusterMode = sparkConf.get("spark.submit.deployMode", "client") == "cluster"
 
   // AM related configurations
+  /*AM相关配置*/
+  /*AM的内存，-xmx*/
   private val amMemory = if (isClusterMode) {
+    /*如果是ClusterMode，取spark.driver.memory，默认为1g*/
     sparkConf.get(DRIVER_MEMORY).toInt
   } else {
+    /*其他，取spark.yarn.am.memory，默认为512m*/
     sparkConf.get(AM_MEMORY).toInt
   }
+  /*Overhead是JVM进程中除Java堆以外占用的空间大小*/
   private val amMemoryOverhead = {
     val amMemoryOverheadEntry = if (isClusterMode) DRIVER_MEMORY_OVERHEAD else AM_MEMORY_OVERHEAD
     sparkConf.get(amMemoryOverheadEntry).getOrElse(
@@ -111,17 +116,20 @@ private[spark] class Client(
       }
     }
   }
+  /*是否提交完Application就不管了，默认为false*/
   private val fireAndForget = isClusterMode && !sparkConf.get(WAIT_FOR_APP_COMPLETION)
 
   private var appId: ApplicationId = null
 
   // The app staging dir based on the STAGING_DIR configuration if configured
   // otherwise based on the users home directory.
+  /*app存放的根目录，优先使用STAGING_DIR，然后用户home目录*/
   private val appStagingBaseDir = sparkConf.get(STAGING_DIR).map { new Path(_) }
     .getOrElse(FileSystem.get(hadoopConf).getHomeDirectory())
 
   private val credentialManager = new ConfigurableCredentialManager(sparkConf, hadoopConf)
 
+  /*如果launcherBackend连通这LauncherServer，那么就向它发送App的运行状态*/
   def reportLauncherState(state: SparkAppHandle.State): Unit = {
     launcherBackend.setState(state)
   }
@@ -140,12 +148,15 @@ private[spark] class Client(
    * creating applications and setting up the application submission context. This was not
    * available in the alpha API.
    */
+  /*向RM提交运行ApplicationMaster的应用程序（o.a.s.deploy.yarn.ApplicationMaster即spark实现的AM类）*/
   def submitApplication(): ApplicationId = {
     var appId: ApplicationId = null
     try {
+      /*启动LauncherBackend 来连接LauncherServer*/
       launcherBackend.connect()
       // Setup the credentials before doing anything else,
       // so we have don't have issues at any point.
+      // 获取提交用户的Credentials，用于后面获取delegationToken
       setupCredentials()
       yarnClient.init(yarnConf)
       yarnClient.start()
@@ -154,24 +165,37 @@ private[spark] class Client(
         .format(yarnClient.getYarnClusterMetrics.getNumNodeManagers))
 
       // Get a new application from our RM
+      /*从RM获得一个新的Application，newApp主要包含：appid和当前可用最大内存*/
       val newApp = yarnClient.createApplication()
       val newAppResponse = newApp.getNewApplicationResponse()
+      // 拿到appID
       appId = newAppResponse.getApplicationId()
-
+      /*记录调用栈*/
       new CallerContext("CLIENT", sparkConf.get(APP_CALLER_CONTEXT),
         Option(appId.toString)).setCurrentContext()
 
       // Verify whether the cluster has enough resources for our AM
+      /*验证集群是否有足够的内存资源来运行AM*/
       verifyClusterResources(newAppResponse)
 
       // Set up the appropriate contexts to launch our AM
+      /*设置适当的上下文以启动AM*/
+      /*创建AppMaster运行的context，为其准备运行环境，java options，
+      以及需要运行的java命令，AppMaster通过该命令在yarn节点上启动*/
+      /*创建container上下文*/
       val containerContext = createContainerLaunchContext(newAppResponse)
+      /*创建ApplicationSubmission上下文*/
       val appContext = createApplicationSubmissionContext(newApp, containerContext)
 
       // Finally, submit and monitor the application
+      /*最后，提交并监视应用程序*/
       logInfo(s"Submitting application $appId to ResourceManager")
+      /*提交到ResourceManager*/
       yarnClient.submitApplication(appContext)
+      /*如果launcherBackend连通这LauncherServer，那么就向它发送AppID*/
+      /*见P383*/
       launcherBackend.setAppId(appId.toString)
+      /*如果launcherBackend连通这LauncherServer，那么就向它发送App的运行状态为SUBMITTED*/
       reportLauncherState(SparkAppHandle.State.SUBMITTED)
 
       appId
@@ -204,10 +228,13 @@ private[spark] class Client(
   /**
    * Set up the context for submitting our ApplicationMaster.
    * This uses the YarnClientApplication not available in the Yarn alpha API.
+   * 设置提交我们的ApplicationMaster的上下文。
+   * 这将使用Yarn alpha API中不可用的YarnClientApplication。
    */
   def createApplicationSubmissionContext(
       newApp: YarnClientApplication,
       containerContext: ContainerLaunchContext): ApplicationSubmissionContext = {
+    /*设置appContext的各种属性，然后返回它*/
     val appContext = newApp.getApplicationSubmissionContext
     appContext.setApplicationName(sparkConf.get("spark.app.name", "Spark"))
     appContext.setQueue(sparkConf.get(QUEUE_NAME))
@@ -226,7 +253,8 @@ private[spark] class Client(
     sparkConf.get(AM_ATTEMPT_FAILURE_VALIDITY_INTERVAL_MS).foreach { interval =>
       appContext.setAttemptFailuresValidityInterval(interval)
     }
-
+    /*Records.newRecord用于创建一个实例对象（可PB序列化的）*/
+    /*设置内存和core*/
     val capability = Records.newRecord(classOf[Resource])
     capability.setMemory(amMemory + amMemoryOverhead)
     capability.setVirtualCores(amCores)
@@ -263,8 +291,10 @@ private[spark] class Client(
     amContainer.setTokens(ByteBuffer.wrap(dob.getData))
   }
 
-  /** Get the application report from the ResourceManager for an application we have submitted. */
+  /** Get the application report from the ResourceManager for an application we have submitted.
+    * 从资源管理器获取我们提交的应用程序的应用程序application报告。*/
   def getApplicationReport(appId: ApplicationId): ApplicationReport =
+    /*调用yarnClient的getApplicationReport获取应用程序报告*/
     yarnClient.getApplicationReport(appId)
 
   /**
@@ -281,13 +311,17 @@ private[spark] class Client(
     val maxMem = newAppResponse.getMaximumResourceCapability().getMemory()
     logInfo("Verifying our application has not requested more than the maximum " +
       s"memory capability of the cluster ($maxMem MB per container)")
+    /*executor的内存*/
     val executorMem = executorMemory + executorMemoryOverhead
     if (executorMem > maxMem) {
+      /*yarn.scheduler.maximum-allocation-mb：container可以获得的最大值*/
+      /*yarn.nodemanager.resource.memory-mb：nodemanager节点管理的内存大小*/
       throw new IllegalArgumentException(s"Required executor memory ($executorMemory" +
         s"+$executorMemoryOverhead MB) is above the max threshold ($maxMem MB) of this cluster! " +
         "Please check the values of 'yarn.scheduler.maximum-allocation-mb' and/or " +
         "'yarn.nodemanager.resource.memory-mb'.")
     }
+    /*AM的内存*/
     val amMem = amMemory + amMemoryOverhead
     if (amMem > maxMem) {
       throw new IllegalArgumentException(s"Required AM memory ($amMemory" +
@@ -337,6 +371,8 @@ private[spark] class Client(
    * consumed locally, set up the appropriate config for downstream code to handle it properly.
    * This is used for setting up a container launch context for our ApplicationMaster.
    * Exposed for testing.
+   * 如果需要，上传资源到分布式缓存。如果要在本地使用资源，请为下游代码设置适当的配置，以便正确地处理它。
+   * 这用于为ApplicationMaster设置container启动上下文。
    */
   def prepareLocalResources(
       destDir: Path,
@@ -404,9 +440,11 @@ private[spark] class Client(
 
     /**
      * Distribute a file to the cluster.
-     *
+     * 将文件分发到集群。
      * If the file's path is a "local:" URI, it's actually not distributed. Other files are copied
      * to HDFS (if not already there) and added to the application's distributed cache.
+     * 如果文件的路径是“local:”URI，那么它实际上不是分布式的。其他文件被复制到HDFS(如果还没有的话)，
+     * 并添加到应用程序的分布式缓存中。
      *
      * @param path URI of the file to distribute.
      * @param resType Type of resource being distributed.
@@ -417,6 +455,7 @@ private[spark] class Client(
      *         localized path for non-local paths, or the input `path` for local paths.
      *         The localized path will be null if the URI has already been added to the cache.
      */
+    /*将文件分发到集群。*/
     def distribute(
         path: String,
         resType: LocalResourceType = LocalResourceType.FILE,
@@ -525,6 +564,7 @@ private[spark] class Client(
     /**
      * Copy user jar to the distributed cache if their scheme is not "local".
      * Otherwise, set the corresponding key in our SparkConf to handle it downstream.
+     * 上传用户jar到分布式缓存
      */
     Option(args.userJar).filter(_.trim.nonEmpty).foreach { jar =>
       val (isLocal, localizedPath) = distribute(jar, destName = Some(APP_JAR_NAME))
@@ -802,12 +842,15 @@ private[spark] class Client(
 
   /**
    * Set up a ContainerLaunchContext to launch our ApplicationMaster container.
+   * 设置ContainerLaunchContext用来启动我们的ApplicationMaster容器。
    * This sets up the launch environment, java options, and the command for launching the AM.
+   * 这将设置启动环境、java选项和用于启动AM的命令。
    */
   private def createContainerLaunchContext(newAppResponse: GetNewApplicationResponse)
     : ContainerLaunchContext = {
     logInfo("Setting up container launch context for our AM")
     val appId = newAppResponse.getApplicationId
+    /*app相关资源在hdfs上存放的目录，*/
     val appStagingDirPath = new Path(appStagingBaseDir, getAppStagingDir(appId))
     val pySparkArchives =
       if (sparkConf.get(IS_PYTHON_APP)) {
@@ -816,12 +859,13 @@ private[spark] class Client(
         Nil
       }
     val launchEnv = setupLaunchEnv(appStagingDirPath, pySparkArchives)
+    /*将需要的资源（文件、jar等）上传到分布式缓存*/
     val localResources = prepareLocalResources(appStagingDirPath, pySparkArchives)
 
     val amContainer = Records.newRecord(classOf[ContainerLaunchContext])
     amContainer.setLocalResources(localResources.asJava)
     amContainer.setEnvironment(launchEnv.asJava)
-
+    /*java选项*/
     val javaOpts = ListBuffer[String]()
 
     // Set the environment variable through a command prefix
@@ -829,6 +873,7 @@ private[spark] class Client(
     var prefixEnv: Option[String] = None
 
     // Add Xmx for AM memory
+    /**/
     javaOpts += "-Xmx" + amMemory + "m"
 
     val tmpDir = new Path(Environment.PWD.$$(), YarnConfiguration.DEFAULT_CONTAINER_TEMP_DIR)
@@ -855,6 +900,8 @@ private[spark] class Client(
     }
 
     // Include driver-specific java options if we are launching a driver
+    /*如果我们正在启动一个Driver，则包括Driver特定的java选项*/
+    /*如果是ClusterMode*/
     if (isClusterMode) {
       val driverOpts = sparkConf.get(DRIVER_JAVA_OPTIONS).orElse(sys.env.get("SPARK_JAVA_OPTS"))
       driverOpts.foreach { opts =>
@@ -869,6 +916,7 @@ private[spark] class Client(
         logWarning(s"${AM_JAVA_OPTIONS.key} will not take effect in cluster mode")
       }
     } else {
+      /*ClientMode*/
       // Validate and include yarn am specific java options in yarn-client mode.
       sparkConf.get(AM_JAVA_OPTIONS).foreach { opts =>
         if (opts.contains("-Dspark")) {
@@ -891,12 +939,14 @@ private[spark] class Client(
     javaOpts += ("-Dspark.yarn.app.container.log.dir=" + ApplicationConstants.LOG_DIR_EXPANSION_VAR)
     YarnCommandBuilderUtils.addPermGenSizeOpt(javaOpts)
 
+    /*用户的class*/
     val userClass =
       if (isClusterMode) {
         Seq("--class", YarnSparkHadoopUtil.escapeForShell(args.userClass))
       } else {
         Nil
       }
+    /*用户的jar*/
     val userJar =
       if (args.userJar != null) {
         Seq("--jar", args.userJar)
@@ -915,6 +965,7 @@ private[spark] class Client(
       } else {
         Nil
       }
+    /*启动AM使用的类*/
     val amClass =
       if (isClusterMode) {
         Utils.classForName("org.apache.spark.deploy.yarn.ApplicationMaster").getName
@@ -932,6 +983,7 @@ private[spark] class Client(
       Seq("--properties-file", buildPath(Environment.PWD.$$(), LOCALIZED_CONF_DIR, SPARK_CONF_FILE))
 
     // Command for the ApplicationMaster
+    /*ApplicationMaster的启动命令*/
     val commands = prefixEnv ++
       Seq(Environment.JAVA_HOME.$$() + "/bin/java", "-server") ++
       javaOpts ++ amArgs ++
@@ -941,6 +993,7 @@ private[spark] class Client(
 
     // TODO: it would be nicer to just make sure there are no null commands here
     val printableCommands = commands.map(s => if (s == null) "null" else s).toList
+    /*设置Commands*/
     amContainer.setCommands(printableCommands.asJava)
 
     logDebug("===============================================================================")
@@ -997,12 +1050,14 @@ private[spark] class Client(
       appId: ApplicationId,
       returnOnRunning: Boolean = false,
       logApplicationReport: Boolean = true): (YarnApplicationState, FinalApplicationStatus) = {
+    /*默认为1s*/
     val interval = sparkConf.get(REPORT_INTERVAL)
     var lastState: YarnApplicationState = null
     while (true) {
       Thread.sleep(interval)
       val report: ApplicationReport =
         try {
+          /*获取appId的application的ApplicationReport*/
           getApplicationReport(appId)
         } catch {
           case e: ApplicationNotFoundException =>
@@ -1014,6 +1069,7 @@ private[spark] class Client(
             // Don't necessarily clean up staging dir because status is unknown
             return (YarnApplicationState.FAILED, FinalApplicationStatus.FAILED)
         }
+      /*获取ApplicationState*/
       val state = report.getYarnApplicationState
 
       if (logApplicationReport) {
@@ -1028,6 +1084,7 @@ private[spark] class Client(
         }
       }
 
+      /*sparkApp的状态发生了改变，调用reportLauncherState，向launcherServer汇报状态*/
       if (lastState != state) {
         state match {
           case YarnApplicationState.RUNNING =>
@@ -1048,7 +1105,7 @@ private[spark] class Client(
           case _ =>
         }
       }
-
+      /*当FINISHED或FAILED或KILLED时，退出*/
       if (state == YarnApplicationState.FINISHED ||
         state == YarnApplicationState.FAILED ||
         state == YarnApplicationState.KILLED) {
@@ -1094,9 +1151,18 @@ private[spark] class Client(
    * Otherwise, the client process will exit after submission.
    * If the application finishes with a failed, killed, or undefined status,
    * throw an appropriate SparkException.
+   * 提交一个application到ResourceManager。
+   * 如果设置spark.yarn.submit.waitAppCompletion设置为true，客户端进程会一直活着报告应用程序的状态，
+   * 直到应用程序因任何原因退出为止。否则，客户端进程将在提交后退出。
+   * 如果应用程序以失败、终止或未定义的状态结束，则抛出适当的SparkException。
    */
+  /*run方法核心的就是提交任务到yarn的ResourceManager，其调用了Client#submitApplication方法，
+  拿到提交完的appID后，监控app的状态或者提出（根据spark.yarn.submit.waitAppCompletion的设置是否为true，
+  ，默认为ture）*/
   def run(): Unit = {
+    /*向ResourceManager提交application，得到appid*/
     this.appId = submitApplication()
+    /*fireAndForget是否提交为就不管了,默认为false*/
     if (!launcherBackend.isConnected() && fireAndForget) {
       val report = getApplicationReport(appId)
       val state = report.getYarnApplicationState
@@ -1106,6 +1172,8 @@ private[spark] class Client(
         throw new SparkException(s"Application $appId finished with status: $state")
       }
     } else {
+      /*默认应该执行这里*/
+      /*监控application状态，直到执行完成或失败退出*/
       val (yarnApplicationState, finalApplicationStatus) = monitorApplication(appId)
       if (yarnApplicationState == YarnApplicationState.FAILED ||
         finalApplicationStatus == FinalApplicationStatus.FAILED) {
@@ -1147,14 +1215,18 @@ private object Client extends Logging {
     }
 
     // Set an env variable indicating we are running in YARN mode.
+    /*设置一个环境变量，指示我们在YARN模式下运行。*/
     // Note that any env variable with the SPARK_ prefix gets propagated to all (remote) processes
+    /*注意，任何带有SPARK_前缀的env变量都会传播到所有(远程)进程*/
     System.setProperty("SPARK_YARN_MODE", "true")
     val sparkConf = new SparkConf
     // SparkSubmit would use yarn cache to distribute files & jars in yarn mode,
     // so remove them from sparkConf here for yarn mode.
+    /*SparkSubmit将使用Yarn缓存在YRAN模式下分发文件和jar文件，所以把它们从YRAN模式的sparkConf中移除。*/
     sparkConf.remove("spark.jars")
     sparkConf.remove("spark.files")
     val args = new ClientArguments(argStrings)
+    /*new一个Client并运行其run方法*/
     new Client(args, sparkConf).run()
   }
 
@@ -1196,6 +1268,7 @@ private object Client extends Logging {
 
   /**
    * Return the path to the given application's staging directory.
+   * 返回给定应用程序的存放目录的路径。
    */
   private def getAppStagingDir(appId: ApplicationId): String = {
     buildPath(SPARK_STAGING, appId.toString())
@@ -1436,6 +1509,7 @@ private object Client extends Logging {
 
   /**
    * Joins all the path components using Path.SEPARATOR.
+   * 使用path . separator连接所有路径组件。
    */
   def buildPath(components: String*): String = {
     components.mkString(Path.SEPARATOR)

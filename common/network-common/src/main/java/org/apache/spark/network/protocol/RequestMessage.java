@@ -18,6 +18,7 @@
 package org.apache.spark.network.protocol;
 
 /** Messages from the client to the server. */
+/*只是做一个表示，表示消息从client到server*/
 public interface RequestMessage extends Message {
   // token interface
 }

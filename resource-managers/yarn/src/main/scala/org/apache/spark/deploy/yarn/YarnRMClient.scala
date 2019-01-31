@@ -33,6 +33,7 @@ import org.apache.spark.util.Utils
 
 /**
  * Handles registering and unregistering the application with the YARN ResourceManager.
+ * 帮助向YARN ResourceManager 注册和取消注册 application。
  */
 private[spark] class YarnRMClient extends Logging {
 
@@ -50,6 +51,7 @@ private[spark] class YarnRMClient extends Logging {
    * @param securityMgr The security manager.
    * @param localResources Map with information about files distributed via YARN's cache.
    */
+  /*向RM注册一个application master*/
   def register(
       driverUrl: String,
       driverRef: RpcEndpointRef,
@@ -66,6 +68,7 @@ private[spark] class YarnRMClient extends Logging {
     this.uiHistoryAddress = uiHistoryAddress
 
     logInfo("Registering the ApplicationMaster")
+    /*注册ApplicationMaster*/
     synchronized {
       amClient.registerApplicationMaster(Utils.localHostName(), 0, uiAddress)
       registered = true
@@ -76,6 +79,7 @@ private[spark] class YarnRMClient extends Logging {
 
   /**
    * Unregister the AM. Guaranteed to only be called once.
+   * 取消注册AM，只保证调用一次。
    *
    * @param status The final status of the AM.
    * @param diagnostics Diagnostics message to include in the final status.
@@ -87,6 +91,7 @@ private[spark] class YarnRMClient extends Logging {
   }
 
   /** Returns the attempt ID. */
+  /*返回ApplicationAttemptId*/
   def getAttemptId(): ApplicationAttemptId = {
     YarnSparkHadoopUtil.get.getContainerId.getApplicationAttemptId()
   }

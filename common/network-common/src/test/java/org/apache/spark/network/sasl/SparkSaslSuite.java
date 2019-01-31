@@ -482,6 +482,7 @@ public class SparkSaslSuite {
 
   private static class EncryptionDisablerBootstrap implements TransportClientBootstrap {
 
+    /*移除客户端管道中的SASL加密*/
     @Override
     public void doBootstrap(TransportClient client, Channel channel) {
       channel.pipeline().remove(SaslEncryption.ENCRYPTION_HANDLER_NAME);

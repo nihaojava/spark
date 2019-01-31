@@ -77,6 +77,7 @@ private[spark] object ThreadUtils {
   /**
    * Wrapper over newFixedThreadPool. Thread names are formatted as prefix-ID, where ID is a
    * unique, sequentially assigned integer.
+   * 包装成一个新的newFixedThreadPool。线程名格式化为前缀-ID，其中ID为唯一的，按顺序分配的整数。
    */
   def newDaemonFixedThreadPool(nThreads: Int, prefix: String): ThreadPoolExecutor = {
     val threadFactory = namedThreadFactory(prefix)
@@ -93,12 +94,15 @@ private[spark] object ThreadUtils {
 
   /**
    * Wrapper over ScheduledThreadPoolExecutor.
+   * 封装ScheduledThreadPoolExecutor
    */
   def newDaemonSingleThreadScheduledExecutor(threadName: String): ScheduledExecutorService = {
     val threadFactory = new ThreadFactoryBuilder().setDaemon(true).setNameFormat(threadName).build()
+    /*创建包含一个线程的周期执行的线程池*/
     val executor = new ScheduledThreadPoolExecutor(1, threadFactory)
     // By default, a cancelled task is not automatically removed from the work queue until its delay
     // elapses. We have to enable it manually.
+    /*默认情况下，被取消的任务在延迟结束之前不会自动从工作队列中删除。我们必须手动启用它。*/
     executor.setRemoveOnCancelPolicy(true)
     executor
   }
@@ -181,6 +185,7 @@ private[spark] object ThreadUtils {
   // scalastyle:off awaitresult
   /**
    * Preferred alternative to `Await.result()`.
+   * 优先选择“wait.result()”。
    *
    * This method wraps and re-throws any exceptions thrown by the underlying `Await` call, ensuring
    * that this thread's stack trace appears in logs.

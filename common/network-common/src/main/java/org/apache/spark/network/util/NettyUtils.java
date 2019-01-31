@@ -35,19 +35,25 @@ import io.netty.util.internal.PlatformDependent;
 
 /**
  * Utilities for creating various Netty constructs based on whether we're using EPOLL or NIO.
+ * 实用工具用于创建各种Netty结构
  */
 public class NettyUtils {
   /** Creates a new ThreadFactory which prefixes each thread with the given name. */
+  /*创建一个线程工厂，它生产的每个线程前缀为threadPoolPrefix，并且线程为daemon后台守护*/
   public static ThreadFactory createThreadFactory(String threadPoolPrefix) {
+    /*new一个Netty中的DefaultThreadFactory*/
     return new DefaultThreadFactory(threadPoolPrefix, true);
   }
 
   /** Creates a Netty EventLoopGroup based on the IOMode. */
+  /*创建一个Netty EventLoopGroup【IO线程池，如果不指定numThreads=0，
+  默认线程数目是  Runtime.getRuntime().availableProcessors() * 2】*/
   public static EventLoopGroup createEventLoop(IOMode mode, int numThreads, String threadPrefix) {
     ThreadFactory threadFactory = createThreadFactory(threadPrefix);
 
     switch (mode) {
       case NIO:
+        /*默认是这个*/
         return new NioEventLoopGroup(numThreads, threadFactory);
       case EPOLL:
         return new EpollEventLoopGroup(numThreads, threadFactory);
@@ -101,6 +107,7 @@ public class NettyUtils {
    * are disabled for TransportClients because the ByteBufs are allocated by the event loop thread,
    * but released by the executor thread rather than the event loop thread. Those thread-local
    * caches actually delay the recycling of buffers, leading to larger memory usage.
+   * 创建一个池化的ByteBuf分配器
    */
   public static PooledByteBufAllocator createPooledByteBufAllocator(
       boolean allowDirectBufs,

@@ -32,19 +32,22 @@ import org.apache.spark.internal.Logging
  * handle events in time to avoid the potential OOM.
  */
 private[spark] abstract class EventLoop[E](name: String) extends Logging {
-
+  /*事件队列，一个阻塞队列*/
   private val eventQueue: BlockingQueue[E] = new LinkedBlockingDeque[E]()
-
+  /*EventLoop是否停止*/
   private val stopped = new AtomicBoolean(false)
-
+  /*event Thread线程*/
   private val eventThread = new Thread(name) {
     setDaemon(true)
 
     override def run(): Unit = {
       try {
+        /*如果EventLoop没有停止*/
         while (!stopped.get) {
+          /*从eventQueue取出一个event事件*/
           val event = eventQueue.take()
           try {
+            /*调用onReceive方法进行处理*/
             onReceive(event)
           } catch {
             case NonFatal(e) =>
@@ -97,6 +100,7 @@ private[spark] abstract class EventLoop[E](name: String) extends Logging {
 
   /**
    * Put the event into the event queue. The event thread will process it later.
+   * 放入eventQueue，event Thread 会处理它
    */
   def post(event: E): Unit = {
     eventQueue.put(event)

@@ -58,10 +58,13 @@ abstract class BlockTransferService extends ShuffleClient with Closeable with Lo
   /**
    * Fetch a sequence of blocks from a remote node asynchronously,
    * available only after [[init]] is invoked.
+   * 异步的从远端节点获取一序列Blocks。
    *
    * Note that this API takes a sequence so the implementation can batch requests, and does not
    * return a future so the underlying implementation can invoke onBlockFetchSuccess as soon as
    * the data of a block is fetched, rather than waiting for all blocks to be fetched.
+   * 请注意，这个API接受一个序列，因此实现可以批处理请求，不返回一个future，
+   * 所以底层实现可以尽快调用onBlockFetchSuccess获取一个块的数据，而不是等待获取所有块。
    */
   override def fetchBlocks(
       host: String,
@@ -72,6 +75,7 @@ abstract class BlockTransferService extends ShuffleClient with Closeable with Lo
 
   /**
    * Upload a single block to a remote node, available only after [[init]] is invoked.
+   * 上传一个单独的block到远端节点
    */
   def uploadBlock(
       hostname: String,
@@ -84,7 +88,7 @@ abstract class BlockTransferService extends ShuffleClient with Closeable with Lo
 
   /**
    * A special case of [[fetchBlocks]], as it fetches only one block and is blocking.
-   *
+   * fetchBlocks的一种特例，阻塞的获取一个block。
    * It is also only available after [[init]] is invoked.
    */
   def fetchBlockSync(host: String, port: Int, execId: String, blockId: String): ManagedBuffer = {
@@ -107,10 +111,12 @@ abstract class BlockTransferService extends ShuffleClient with Closeable with Lo
 
   /**
    * Upload a single block to a remote node, available only after [[init]] is invoked.
-   *
+   * 上传一个单独的block到一个远端节点，只有在调用了init方法后才可用。
    * This method is similar to [[uploadBlock]], except this one blocks the thread
    * until the upload finishes.
+   * 此方法和[[uploadBlock]]比较相似，除了阻塞了线程直到上传blocks完成。
    */
+  /*同步上传一个block到远端节点，调用的还是uploadBlock*/
   def uploadBlockSync(
       hostname: String,
       port: Int,

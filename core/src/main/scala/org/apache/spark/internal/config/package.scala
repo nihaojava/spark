@@ -65,6 +65,7 @@ package object config {
   private[spark] val DYN_ALLOCATION_MIN_EXECUTORS =
     ConfigBuilder("spark.dynamicAllocation.minExecutors").intConf.createWithDefault(0)
 
+  /*动态分配executors的初始个数*/
   private[spark] val DYN_ALLOCATION_INITIAL_EXECUTORS =
     ConfigBuilder("spark.dynamicAllocation.initialExecutors")
       .fallbackConf(DYN_ALLOCATION_MIN_EXECUTORS)

@@ -66,7 +66,9 @@ private[memory] class StorageMemoryPool(
    * Set the [[MemoryStore]] used by this manager to evict cached blocks.
    * This must be set after construction due to initialization ordering constraints.
    * 设置MemoryStore，用于通过此管理器回收缓存块。
-   * 由于初始化排序约束，这必须在构造之后设置
+   * 由于初始化顺序的约束，这必须在构造之后设置。
+   * 【先构造StorageMemoryPool，然后把它当做构造函数的参数，来构造MemoryStore，所以】
+   * 【可见StorageMemoryPool和MemoryStore是双向引用，1对1】
    */
   final def setMemoryStore(store: MemoryStore): Unit = {
     _memoryStore = store

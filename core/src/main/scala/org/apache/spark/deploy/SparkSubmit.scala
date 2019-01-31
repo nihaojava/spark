@@ -51,7 +51,10 @@ import org.apache.spark.util._
 /**
  * Whether to submit, kill, or request the status of an application.
  * The latter two operations are currently supported only for standalone and Mesos cluster modes.
+ * 是否提交、终止或请求application的状态。
+ * 后两种操作目前仅支持standalone和Mesos集群模式。
  */
+/**/
 private[deploy] object SparkSubmitAction extends Enumeration {
   type SparkSubmitAction = Value
   val SUBMIT, KILL, REQUEST_STATUS = Value
@@ -59,13 +62,15 @@ private[deploy] object SparkSubmitAction extends Enumeration {
 
 /**
  * Main gateway of launching a Spark application.
- *
+ * 启动Spark应用程序的主入口。
  * This program handles setting up the classpath with relevant Spark dependencies and provides
  * a layer over the different cluster managers and deploy modes that Spark supports.
+ * 这个程序 处理与Spark相关的类路径设置，并在Spark支持的不同集群管理器和部署模式上提供一个层。
  */
 object SparkSubmit extends CommandLineUtils {
 
   // Cluster managers
+  /*集群管理器*/
   private val YARN = 1
   private val STANDALONE = 2
   private val MESOS = 4
@@ -73,11 +78,13 @@ object SparkSubmit extends CommandLineUtils {
   private val ALL_CLUSTER_MGRS = YARN | STANDALONE | MESOS | LOCAL
 
   // Deploy modes
+  /*部署模式，【driver运行在clinet端还是运行在cluster端】*/
   private val CLIENT = 1
   private val CLUSTER = 2
   private val ALL_DEPLOY_MODES = CLIENT | CLUSTER
 
   // Special primary resource names that represent shells rather than application jars.
+  /*表示shell而不是应用程序jar的特殊主资源名称。*/
   private val SPARK_SHELL = "spark-shell"
   private val PYSPARK_SHELL = "pyspark-shell"
   private val SPARKR_SHELL = "sparkr-shell"
@@ -106,6 +113,7 @@ object SparkSubmit extends CommandLineUtils {
   }
   // scalastyle:on println
 
+  /*主程序*/
   override def main(args: Array[String]): Unit = {
     val appArgs = new SparkSubmitArguments(args)
     if (appArgs.verbose) {
@@ -113,9 +121,13 @@ object SparkSubmit extends CommandLineUtils {
       printStream.println(appArgs)
       // scalastyle:on println
     }
+    /*后两种操作目前仅支持standalone和Mesos集群模式。*/
     appArgs.action match {
+        /*spark-submit.sh 会执行此方法*/
       case SparkSubmitAction.SUBMIT => submit(appArgs)
+        /* use --kill specified */
       case SparkSubmitAction.KILL => kill(appArgs)
+        /* use --status specified */
       case SparkSubmitAction.REQUEST_STATUS => requestStatus(appArgs)
     }
   }
@@ -151,6 +163,7 @@ object SparkSubmit extends CommandLineUtils {
     val (childArgs, childClasspath, sysProps, childMainClass) = prepareSubmitEnvironment(args)
 
     def doRunMain(): Unit = {
+      /*判断是否使用用户代理*/
       if (args.proxyUser != null) {
         val proxyUser = UserGroupInformation.createProxyUser(args.proxyUser,
           UserGroupInformation.getCurrentUser())
@@ -175,20 +188,26 @@ object SparkSubmit extends CommandLineUtils {
             }
         }
       } else {
+        /*执行runMain*/
         runMain(childArgs, childClasspath, sysProps, childMainClass, args.verbose)
       }
     }
 
      // In standalone cluster mode, there are two submission gateways:
+    /*在standalone集群模式下，有两个提交入口*/
      //   (1) The traditional RPC gateway using o.a.s.deploy.Client as a wrapper
+    /*传统的RPC网关封装了o.a.s.deploy.Client*/
      //   (2) The new REST-based gateway introduced in Spark 1.3
+    /*在spark1.3中引入的一个新的REST-based gateway*/
      // The latter is the default behavior as of Spark 1.3, but Spark submit will fail over
      // to use the legacy gateway if the master endpoint turns out to be not a REST server.
+    /*如果是StandaloneCluster&&master是一个REST server（默认是）*/
     if (args.isStandaloneCluster && args.useRest) {
       try {
         // scalastyle:off println
         printStream.println("Running Spark using the REST application submission protocol.")
         // scalastyle:on println
+        /*运行doRunMain*/
         doRunMain()
       } catch {
         // Fail over to use the legacy submission gateway
@@ -200,6 +219,7 @@ object SparkSubmit extends CommandLineUtils {
       }
     // In all other modes, just run the main class as prepared
     } else {
+      /*运行doRunMain*/
       doRunMain()
     }
   }
@@ -212,7 +232,12 @@ object SparkSubmit extends CommandLineUtils {
    *   (3) a map of system properties, and
    *   (4) the main class for the child
    * Exposed for testing.
+   * 准备提交application的环境。
+   * 返回4-tuple，（子线程的参数列表，子类路径的列表，系统属性map，child的主类）
    */
+  /*在 prepareSubmitEnvironment 里，主要负责解析用户参数，设置环境变量env，
+  处理python/R等依赖，然后针对不同的部署模式，匹配不同的运行主类，
+  比如： yarn-client>args.mainClass，yarn-cluster>o.a.s.deploy.yarn.Client（org.apache.spark.deploy.yarn.Client缩写）*/
   private[deploy] def prepareSubmitEnvironment(args: SparkSubmitArguments)
       : (Seq[String], Seq[String], Map[String, String], String) = {
     // Return values
@@ -222,6 +247,7 @@ object SparkSubmit extends CommandLineUtils {
     var childMainClass = ""
 
     // Set the cluster manager
+    /*设置clusterManager*/
     val clusterManager: Int = args.master match {
       case "yarn" => YARN
       case "yarn-client" | "yarn-cluster" =>
@@ -237,6 +263,7 @@ object SparkSubmit extends CommandLineUtils {
     }
 
     // Set the deploy mode; default is client mode
+    /*设置deploy mode部署模式；默认是client模式*/
     var deployMode: Int = args.deployMode match {
       case "client" | null => CLIENT
       case "cluster" => CLUSTER
@@ -246,6 +273,9 @@ object SparkSubmit extends CommandLineUtils {
     // Because the deprecated way of specifying "yarn-cluster" and "yarn-client" encapsulate both
     // the master and deploy mode, we have some logic to infer the master and deploy mode
     // from each other if only one is specified, or exit early if they are at odds.
+    /*由于弃用了指定“yarn-cluster”和“yarn-client”的方式封装master和deploy mode，
+    因此如果只指定了master或部署模式，我们有一些逻辑来推断出部署模式或master；
+    或者如果它们不一致，就提前退出。*/
     if (clusterManager == YARN) {
       (args.master, args.deployMode) match {
         case ("yarn-cluster", null) =>
@@ -260,6 +290,7 @@ object SparkSubmit extends CommandLineUtils {
       }
 
       // Make sure YARN is included in our build if we're trying to use it
+      /*如果我们要使用YARN，请确保它包含在我们的构建中*/
       if (!Utils.classIsLoadable("org.apache.spark.deploy.yarn.Client") && !Utils.isTesting) {
         printErrorAndExit(
           "Could not load YARN classes. " +
@@ -268,6 +299,7 @@ object SparkSubmit extends CommandLineUtils {
     }
 
     // Update args.deployMode if it is null. It will be passed down as a Spark property later.
+    /*如果args.deployMode为空，则更新它。稍后它将作为Spark属性传递。*/
     (args.deployMode, deployMode) match {
       case (null, CLIENT) => args.deployMode = "client"
       case (null, CLUSTER) => args.deployMode = "cluster"
@@ -286,6 +318,7 @@ object SparkSubmit extends CommandLineUtils {
       }
 
     // Create the IvySettings, either load from file or build defaults
+    /*创建IvySettings，从文件加载或构建默认设置*/
     val ivySettings = args.sparkProperties.get("spark.jars.ivySettings").map { ivySettingsFile =>
       SparkSubmitUtils.loadIvySettings(ivySettingsFile, Option(args.repositories),
         Option(args.ivyRepoPath))
@@ -339,6 +372,7 @@ object SparkSubmit extends CommandLineUtils {
       case (LOCAL, CLUSTER) =>
         printErrorAndExit("Cluster deploy mode is not compatible with master \"local\"")
       case (_, CLUSTER) if isShell(args.primaryResource) =>
+        /*spark-shell 只能是client模式，因为要在driver端交互*/
         printErrorAndExit("Cluster deploy mode is not applicable to Spark shells.")
       case (_, CLUSTER) if isSqlShell(args.mainClass) =>
         printErrorAndExit("Cluster deploy mode is not applicable to Spark SQL shell.")
@@ -432,12 +466,15 @@ object SparkSubmit extends CommandLineUtils {
     }
 
     // Special flag to avoid deprecation warnings at the client
+    /*特殊的标志，以避免客户端的弃用警告*/
     sysProps("SPARK_SUBMIT") = "true"
 
     // A list of rules to map each argument to system properties or command-line options in
     // each deploy mode; we iterate through these below
-    val options = List[OptionAssigner](
+    /*将每个参数映射到每个部署模式中的系统属性或命令行选项的规则列表;
+    我们在下面进行迭代*/
 
+    val options = List[OptionAssigner](
       // All cluster managers
       OptionAssigner(args.master, ALL_CLUSTER_MGRS, ALL_DEPLOY_MODES, sysProp = "spark.master"),
       OptionAssigner(args.deployMode, ALL_CLUSTER_MGRS, ALL_DEPLOY_MODES,
@@ -478,6 +515,7 @@ object SparkSubmit extends CommandLineUtils {
         sysProp = "spark.driver.memory"),
       OptionAssigner(args.driverCores, STANDALONE | MESOS | YARN, CLUSTER,
         sysProp = "spark.driver.cores"),
+    /*supervise目前只支持STANDALONE和MESOS*/
       OptionAssigner(args.supervise.toString, STANDALONE | MESOS, CLUSTER,
         sysProp = "spark.driver.supervise"),
       OptionAssigner(args.ivyRepoPath, STANDALONE, CLUSTER, sysProp = "spark.jars.ivy")
@@ -485,7 +523,10 @@ object SparkSubmit extends CommandLineUtils {
 
     // In client mode, launch the application main class directly
     // In addition, add the main application jar and any added jars (if any) to the classpath
+    /*【在client模式，直接启动application的main class】
+    * 此外，将主应用程序jar和任何添加的jar(如果有的话)添加到类路径中*/
     if (deployMode == CLIENT) {
+      // client 模式下，运行的是 --class 后指定的mainClass，也即我们的代码
       childMainClass = args.mainClass
       if (isUserJar(args.primaryResource)) {
         childClasspath += args.primaryResource
@@ -507,6 +548,8 @@ object SparkSubmit extends CommandLineUtils {
     // Add the application jar automatically so the user doesn't have to call sc.addJar
     // For YARN cluster mode, the jar is already distributed on each node as "app.jar"
     // For python and R files, the primary resource is already distributed as a regular file
+    /*自动添加应用程序jar，这样用户就不必为YARN集群模式调用sc.addJar,
+    jar已经作为python和R文件的“app.jar”分布在每个节点上，主资源已经作为常规文件分布*/
     if (!isYarnCluster && !args.isPython && !args.isR) {
       var jars = sysProps.get("spark.jars").map(x => x.split(",").toSeq).getOrElse(Seq.empty)
       if (isUserJar(args.primaryResource)) {
@@ -517,6 +560,7 @@ object SparkSubmit extends CommandLineUtils {
 
     // In standalone cluster mode, use the REST client to submit the application (Spark 1.3+).
     // All Spark parameters are expected to be passed to the client through system properties.
+    /*StandaloneCluster下运行的主类*/
     if (args.isStandaloneCluster) {
       if (args.useRest) {
         childMainClass = "org.apache.spark.deploy.rest.RestSubmissionClient"
@@ -536,6 +580,7 @@ object SparkSubmit extends CommandLineUtils {
     }
 
     // Let YARN know it's a pyspark app, so it distributes needed libraries.
+    /*让YARN知道这是一个pyspark应用程序，所以它会分发所需的库。*/
     if (clusterManager == YARN) {
       if (args.isPython) {
         sysProps.put("spark.yarn.isPython", "true")
@@ -566,7 +611,9 @@ object SparkSubmit extends CommandLineUtils {
     }
 
     // In yarn-cluster mode, use yarn.Client as a wrapper around the user class
+    /*在yarn-cluster模式下，使用yarn.Client封装了用户的class*/
     if (isYarnCluster) {
+      // yarn-cluster 模式下，运行的是Client类
       childMainClass = "org.apache.spark.deploy.yarn.Client"
       if (args.isPython) {
         childArgs += ("--primary-py-file", args.primaryResource)
@@ -579,6 +626,7 @@ object SparkSubmit extends CommandLineUtils {
         if (args.primaryResource != SparkLauncher.NO_RESOURCE) {
           childArgs += ("--jar", args.primaryResource)
         }
+        // 这里 --class 指定的是AppMaster里启动的Driver，也即我们的代码
         childArgs += ("--class", args.mainClass)
       }
       if (args.childArgs != null) {
@@ -651,9 +699,14 @@ object SparkSubmit extends CommandLineUtils {
 
   /**
    * Run the main method of the child class using the provided launch environment.
+   * 通过提供的启动环境运行child类的main方法
    *
    * Note that this main class will not be the one provided by the user if we're
    * running cluster deploy mode or python applications.
+   * 注意，如果我们是运行在cluster部署模式下后者python的applications，
+   * 那这个主类将不是用户提供的类。
+   * yarn-cluster>o.a.s.deploy.yarn.Client
+   * yarn-client>args.mainClass（用户提供的类）
    */
   private def runMain(
       childArgs: Seq[String],
@@ -662,6 +715,7 @@ object SparkSubmit extends CommandLineUtils {
       childMainClass: String,
       verbose: Boolean): Unit = {
     // scalastyle:off println
+    /*开启verbose，可以打印详细信息*/
     if (verbose) {
       printStream.println(s"Main class:\n$childMainClass")
       printStream.println(s"Arguments:\n${childArgs.mkString("\n")}")
@@ -671,6 +725,7 @@ object SparkSubmit extends CommandLineUtils {
     }
     // scalastyle:on println
 
+    /*创建类加载器*/
     val loader =
       if (sysProps.getOrElse("spark.driver.userClassPathFirst", "false").toBoolean) {
         new ChildFirstURLClassLoader(new Array[URL](0),
@@ -692,6 +747,7 @@ object SparkSubmit extends CommandLineUtils {
     var mainClass: Class[_] = null
 
     try {
+      /*加载类childMainClass*/
       mainClass = Utils.classForName(childMainClass)
     } catch {
       case e: ClassNotFoundException =>
@@ -719,6 +775,7 @@ object SparkSubmit extends CommandLineUtils {
       printWarning("Subclasses of scala.App may not work correctly. Use a main() method instead.")
     }
 
+    /*获取mainClass的main方法*/
     val mainMethod = mainClass.getMethod("main", new Array[String](0).getClass)
     if (!Modifier.isStatic(mainMethod.getModifiers)) {
       throw new IllegalStateException("The main method in the given main class must be static")
@@ -735,6 +792,9 @@ object SparkSubmit extends CommandLineUtils {
     }
 
     try {
+      /*执行mainClass的的main函数
+      * * yarn-cluster>o.a.s.deploy.yarn.Client.main()
+      * yarn-client>args.mainClass.main()（用户提供的类）*/
       mainMethod.invoke(null, childArgs.toArray)
     } catch {
       case t: Throwable =>
@@ -1152,6 +1212,7 @@ private[spark] object SparkSubmitUtils {
 /**
  * Provides an indirection layer for passing arguments as system properties or flags to
  * the user's driver program or to downstream launcher tools.
+ * 提供间接层，用于将参数作为系统属性或标志 传递给用户的驱动程序 或下游启动工具。
  */
 private case class OptionAssigner(
     value: String,

@@ -28,9 +28,11 @@ import org.apache.spark.storage.BlockId
 import org.apache.spark.util.{AccumulatorV2, Utils}
 
 // Task result. Also contains updates to accumulator variables.
+/*任务的结果。还包含对累加器变量的更新。*/
 private[spark] sealed trait TaskResult[T]
 
 /** A reference to a DirectTaskResult that has been stored in the worker's BlockManager. */
+/*一个引用指向直接的Task的计算结果，该结果存储在work的BlockManager中的*/
 private[spark] case class IndirectTaskResult[T](blockId: BlockId, size: Int)
   extends TaskResult[T] with Serializable
 

@@ -82,6 +82,7 @@ private[spark] class ReliableCheckpointRDD[T: ClassTag](
   /**
    * Return the locations of the checkpoint file associated with the given partition.
    */
+  /*获取指定分区split的的首选位置*/
   protected override def getPreferredLocations(split: Partition): Seq[String] = {
     val status = fs.getFileStatus(
       new Path(checkpointPath, ReliableCheckpointRDD.checkpointFileName(split.index)))

@@ -66,6 +66,7 @@ private[spark] object TaskDescription {
     }
   }
 
+  /*对TaskDescription进行编码，返回ByteBuffer*/
   def encode(taskDescription: TaskDescription): ByteBuffer = {
     val bytesOut = new ByteBufferOutputStream(4096)
     val dataOut = new DataOutputStream(bytesOut)

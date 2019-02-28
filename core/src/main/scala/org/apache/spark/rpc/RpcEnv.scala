@@ -172,9 +172,9 @@ private[spark] trait RpcEnvFileServer {
   /**
    * Adds a jar to be served by this RpcEnv. Similar to `addFile` but for jars added using
    * `SparkContext.addJar`.
-   *
+   *  添加一个jar到RpcEnv。
    * @param file Local file to serve.
-   * @return A URI for the location of the file.
+   * @return A URI for the location of the file.  返回文件URI
    */
   def addJar(file: File): String
 

@@ -57,7 +57,7 @@ private[spark] class Executor(
     userClassPath: Seq[URL] = Nil,  /*用户指定的类路径*/
     isLocal: Boolean = false)
   extends Logging {
-
+  /*在接收到DriverEndpoint发送的registeredExecutor消息后【已经注册完成】会new一个Executor*/
   logInfo(s"Starting executor ID $executorId on host $executorHostname")
 
   // Application dependencies (added through SparkContext) that we've fetched so far on this node.
@@ -130,14 +130,14 @@ private[spark] class Executor(
   // Max size of direct result. If task result is bigger than this, we use the block manager
   // to send the result back.
   /*直接结果的最大大小。如果任务结果大于此值，则使用block manager将结果发回。
-  * 默认为128M*/
+  * 默认为1M*/
   private val maxDirectResultSize = Math.min(
-    conf.getSizeAsBytes("spark.task.maxDirectResultSize", 1L << 20),
+    conf.getSizeAsBytes("spark.task.maxDirectResultSize", 1L << 20),  /*1m*/
     RpcUtils.maxMessageSizeBytes(conf))
 
   // Limit of bytes for total size of results (default is 1GB)
   /*结果的最大限制(默认为1GB)
-  * task运行的结果如果超过1G会被删除。如果小于128M直接返回给Driver，如果在128M和1G之间，会写入BlockManager，发送*/
+  * task运行的结果如果超过1G会被删除。如果小于128M直接返回给Driver，如果在1M和1G之间，会写入BlockManager，发送*/
   private val maxResultSize = Utils.getMaxResultSize(conf)
 
   // Maintains the list of running tasks.
@@ -231,7 +231,7 @@ private[spark] class Executor(
   private def computeTotalGcTime(): Long = {
     ManagementFactory.getGarbageCollectorMXBeans.asScala.map(_.getCollectionTime).sum
   }
-
+  /*P527*/
   class TaskRunner(
       execBackend: ExecutorBackend, /*CoarseGrainedExecutorBackend*/
       private val taskDescription: TaskDescription)
@@ -311,7 +311,7 @@ private[spark] class Executor(
       /*生成新的对闭包序列化的实例*/
       val ser = env.closureSerializer.newInstance()
       logInfo(s"Running $taskName (TID $taskId)")
-      /*更新Task为RUNNING*/
+      /*更新Task为RUNNING【向DrvierEndpoint发送statusUpdate消息】*/
       execBackend.statusUpdate(taskId, TaskState.RUNNING, EMPTY_BYTE_BUFFER)
       var taskStart: Long = 0
       var taskStartCpu: Long = 0
@@ -352,7 +352,7 @@ private[spark] class Executor(
           threadMXBean.getCurrentThreadCpuTime
         } else 0L
         var threwException = true
-        /*运行，调用task的run方法*/
+        /*运行，调用task的run方法，得到执行结果value*/
         val value = try {
           val res = task.run(
             taskAttemptId = taskId, /*taskAttemptId*/

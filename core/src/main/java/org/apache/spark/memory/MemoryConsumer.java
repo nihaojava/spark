@@ -26,6 +26,7 @@ import org.apache.spark.unsafe.memory.MemoryBlock;
  * A memory consumer of {@link TaskMemoryManager} that supports spilling.
  *
  * Note: this only supports allocation / spilling of Tungsten memory.
+ * 注意:这只支持分配/溢出钨内存。
  */
 public abstract class MemoryConsumer {
 
@@ -87,6 +88,7 @@ public abstract class MemoryConsumer {
   /**
    * Allocates a LongArray of `size`.
    */
+  /*从未使用*/
   public LongArray allocateArray(long size) {
     long required = size * 8L;
     MemoryBlock page = taskMemoryManager.allocatePage(required, this);

@@ -28,7 +28,7 @@ public interface MemoryAllocator {
 
   // Same as jemalloc's debug fill values.
   byte MEMORY_DEBUG_FILL_CLEAN_VALUE = (byte)0xa5;
-  byte MEMORY_DEBUG_FILL_FREED_VALUE = (byte)0x5a;
+  byte MEMORY_DEBUG_FILL_FREED_VALUE = (byte)0x5a; /*对应字母应该是Z*/
 
   /**
    * Allocates a contiguous block of memory. Note that the allocated memory is not guaranteed

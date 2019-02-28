@@ -58,6 +58,7 @@ private[spark] case class HeartbeatResponse(reregisterBlockManager: Boolean)
  * Lives in the driver to receive heartbeats from executors..
  * 运行在driver端，用来接收来自executors的心跳消息
  */
+/*既继承了SparkListener是一个监听器，又实现了ThreadSafeRpcEndpoint是一个接收消息端*/
 private[spark] class HeartbeatReceiver(sc: SparkContext, clock: Clock)
   extends SparkListener with ThreadSafeRpcEndpoint with Logging {
   //clock:对System.currentTimeMills()的封装，用于获取当前毫秒时间
@@ -66,6 +67,7 @@ private[spark] class HeartbeatReceiver(sc: SparkContext, clock: Clock)
     this(sc, new SystemClock)
   }
 
+  /*将HeartbeatReceiver添加到事件总线*/
   sc.addSparkListener(this)
 
   override val rpcEnv: RpcEnv = sc.env.rpcEnv
@@ -104,7 +106,7 @@ private[spark] class HeartbeatReceiver(sc: SparkContext, clock: Clock)
   private val eventLoopThread =
     ThreadUtils.newDaemonSingleThreadScheduledExecutor("heartbeat-receiver-event-loop-thread")
 
-  /*用于杀死Executor的一个线程*/
+  /*用于杀死Executor的一个线程，主要用于杀死超时的Executor*/
   private val killExecutorThread = ThreadUtils.newDaemonSingleThreadExecutor("kill-executor-thread")
 
   /*HeartBeatReceiver启动的时候执行*/

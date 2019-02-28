@@ -159,6 +159,9 @@ object SparkSubmit extends CommandLineUtils {
    * main class.
    */
   @tailrec
+  /*提交application，包含两步
+  * 1.准备提交环境
+  * 2.调用子主类的main方法*/
   private def submit(args: SparkSubmitArguments): Unit = {
     val (childArgs, childClasspath, sysProps, childMainClass) = prepareSubmitEnvironment(args)
 
@@ -237,7 +240,8 @@ object SparkSubmit extends CommandLineUtils {
    */
   /*在 prepareSubmitEnvironment 里，主要负责解析用户参数，设置环境变量env，
   处理python/R等依赖，然后针对不同的部署模式，匹配不同的运行主类，
-  比如： yarn-client>args.mainClass，yarn-cluster>o.a.s.deploy.yarn.Client（org.apache.spark.deploy.yarn.Client缩写）*/
+  比如： yarn-client>args.mainClass，
+  yarn-cluster>o.a.s.deploy.yarn.Client（org.apache.spark.deploy.yarn.Client缩写）*/
   private[deploy] def prepareSubmitEnvironment(args: SparkSubmitArguments)
       : (Seq[String], Seq[String], Map[String, String], String) = {
     // Return values

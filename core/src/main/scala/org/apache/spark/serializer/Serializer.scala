@@ -95,6 +95,7 @@ abstract class Serializer {
    * See SPARK-7311 for more details.
    */
   @Private
+  /*默认是false，目前默认为java序列化器，直接返回false*/
   private[spark] def supportsRelocationOfSerializedObjects: Boolean = false
 }
 

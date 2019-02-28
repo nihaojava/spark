@@ -56,6 +56,8 @@ public class MemoryBlock extends MemoryLocation {
 
   /**
    * Fills the memory block with the specified byte value.
+   * obj对象【Long数组】从 offset开始长度为length 都填充为指定byte值
+   * 就这样使用？
    */
   public void fill(byte value) {
     Platform.setMemory(obj, offset, length, value);

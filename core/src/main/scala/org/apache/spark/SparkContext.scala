@@ -205,7 +205,7 @@ class SparkContext(config: SparkConf) extends Logging {
   private var _executorMemory: Int = _
   private var _schedulerBackend: SchedulerBackend = _
   private var _taskScheduler: TaskScheduler = _
-  private var _heartbeatReceiver: RpcEndpointRef = _
+  private var _heartbeatReceiver: RpcEndpointRef = _  //心跳接收器
   @volatile private var _dagScheduler: DAGScheduler = _
   private var _applicationId: String = _
   private var _applicationAttemptId: Option[String] = None
@@ -234,6 +234,7 @@ class SparkContext(config: SparkConf) extends Logging {
   def jars: Seq[String] = _jars
   def files: Seq[String] = _files
   def master: String = _conf.get("spark.master")
+  /*如果没设定，默认为client*/
   def deployMode: String = _conf.getOption("spark.submit.deployMode").getOrElse("client")
   def appName: String = _conf.get("spark.app.name")
 
@@ -249,6 +250,7 @@ class SparkContext(config: SparkConf) extends Logging {
   def isStopped: Boolean = stopped.get()
 
   // An asynchronous listener bus for Spark events
+  /*事件总线，具体的实现LiveListenerBus，异步处理事件*/
   private[spark] val listenerBus = new LiveListenerBus(this)
 
   // This function allows components created by SparkEnv to be mocked in unit tests:
@@ -264,6 +266,7 @@ class SparkContext(config: SparkConf) extends Logging {
   private[spark] def env: SparkEnv = _env
 
   // Used to store a URL for each static file/jar together with the file's local timestamp
+  /*用户添加的jars和files【URL，timestamp】*/
   private[spark] val addedFiles = new ConcurrentHashMap[String, Long]().asScala
   private[spark] val addedJars = new ConcurrentHashMap[String, Long]().asScala
 
@@ -410,6 +413,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
     _conf.set("spark.executor.id", SparkContext.DRIVER_IDENTIFIER)
 
+    /*P124获取用户指定的依赖的jar或file，通过 spark.jars 或 spark.files 指定的*/
     _jars = Utils.getUserJars(_conf)
     _files = _conf.getOption("spark.files").map(_.split(",")).map(_.filter(_.nonEmpty))
       .toSeq.flatten
@@ -436,6 +440,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // "_jobProgressListener" should be set up before creating SparkEnv because when creating
     // "SparkEnv", some messages will be posted to "listenerBus" and we should not miss them.
+    /*创建job运行进度监听器_jobProgressListener，并加入事件总线*/
     _jobProgressListener = new JobProgressListener(_conf)
     listenerBus.addListener(jobProgressListener)
 
@@ -474,6 +479,7 @@ class SparkContext(config: SparkConf) extends Logging {
     _hadoopConfiguration = SparkHadoopUtil.get.newConfiguration(_conf)
 
     // Add each JAR given through the constructor
+    /*添加用户传递过来的jars和files到Driver的RPC环境中*/
     if (jars != null) {
       jars.foreach(addJar)
     }
@@ -506,14 +512,15 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // We need to register "HeartbeatReceiver" before "createTaskScheduler" because Executor will
     // retrieve "HeartbeatReceiver" in the constructor. (SPARK-6640)
-    /*启动HeartbeatReceiver，并且注册到rpcEnv*/
+    /*先new一个HeartbeatReceiver，new的过程会将其添加到事件总线；
+    然后启动HeartbeatReceiver，并且注册到rpcEnv*/
     _heartbeatReceiver = env.rpcEnv.setupEndpoint(
       HeartbeatReceiver.ENDPOINT_NAME, new HeartbeatReceiver(this))
 
     // Create and start the scheduler
-    /*创建并启动scheduler*/
+    /*创建并启动taskScheduler*/
     /*创建schedulerBackend和taskScheduler*/
-    /*根据不同的deploymode创建方式不同*/
+    /*根据master（也就是ClusterManager）的类型创建*/
     val (sched, ts) = SparkContext.createTaskScheduler(this, master, deployMode)
     _schedulerBackend = sched
     _taskScheduler = ts
@@ -1515,9 +1522,11 @@ class SparkContext(config: SparkConf) extends Logging {
     assertNotStopped()
     require(!classOf[RDD[_]].isAssignableFrom(classTag[T].runtimeClass),
       "Can not directly broadcast RDDs; instead, call collect() and broadcast the result.")
+    /*不能直接广播RDDs;相反，调用collect()并广播结果。【因为只能广播单机数据】*/
     val bc = env.broadcastManager.newBroadcast[T](value, isLocal)
     val callSite = getCallSite
     logInfo("Created broadcast " + bc.id + " from " + callSite.shortForm)
+    /*注册到cleaner*/
     cleaner.foreach(_.registerBroadcastForCleanup(bc))
     bc
   }
@@ -1547,6 +1556,7 @@ class SparkContext(config: SparkConf) extends Logging {
    * @param recursive if true, a directory can be given in `path`. Currently directories are
    * only supported for Hadoop-supported filesystems.
    */
+  /*下载文件（路径path），该文件将在sparkjob运行的时候executor使用到*/
   def addFile(path: String, recursive: Boolean): Unit = {
     val uri = new Path(path).toUri
     val schemeCorrectedPath = uri.getScheme match {
@@ -1573,6 +1583,7 @@ class SparkContext(config: SparkConf) extends Logging {
     }
 
     val key = if (!isLocal && scheme == "file") {
+      /*添加到文件服务*/
       env.rpcEnv.fileServer.addFile(new File(uri.getPath))
     } else {
       schemeCorrectedPath
@@ -1582,6 +1593,7 @@ class SparkContext(config: SparkConf) extends Logging {
       logInfo(s"Added file $path at $key with timestamp $timestamp")
       // Fetch the file locally so that closures which are run on the driver can still use the
       // SparkFiles API to access files.
+      /*下载文件到本地*/
       Utils.fetchFile(uri.toString, new File(SparkFiles.getRootDirectory()), conf,
         env.securityManager, hadoopConfiguration, timestamp, useCache = false)
       postEnvironmentUpdate()
@@ -1593,6 +1605,7 @@ class SparkContext(config: SparkConf) extends Logging {
    * Register a listener to receive up-calls from events that happen during execution.
    */
   @DeveloperApi
+  /*封装了listenerBus的addListener方法，sparkContext提供的将监听器添加到事件总线中*/
   def addSparkListener(listener: SparkListenerInterface) {
     listenerBus.addListener(listener)
   }
@@ -1686,11 +1699,14 @@ class SparkContext(config: SparkConf) extends Logging {
   /**
    * :: DeveloperApi ::
    * Request that the cluster manager kill the specified executor.
-   *
+   * 请求cluster manager杀死指定的executor。
    * @note This is an indication to the cluster manager that the application wishes to adjust
    * its resource usage downwards. If the application wishes to replace the executor it kills
    * through this method with a new one, it should follow up explicitly with a call to
    * {{SparkContext#requestExecutors}}.
+   * 注意：这是一给cluster manager的一个暗示，暗示这个应用希望向下调整使用的资源。
+   * 如果应用程序希望替换此executor为一个新的executor，应该在调用此方法杀死该executor后，
+   * 紧接着明确调用SparkContext#requestExecutors。
    *
    * @return whether the request is received.
    */
@@ -1700,15 +1716,18 @@ class SparkContext(config: SparkConf) extends Logging {
   /**
    * Request that the cluster manager kill the specified executor without adjusting the
    * application resource requirements.
+   * 请求cluster manager杀死指定的executor且不调整应用程序资源需求。
    *
    * The effect is that a new executor will be launched in place of the one killed by
    * this request. This assumes the cluster manager will automatically and eventually
    * fulfill all missing application resource requests.
+   * 这效果是一个新的executor将代替请求杀死的executor。
    *
    * @note The replace is by no means guaranteed; another application on the same cluster
    * can steal the window of opportunity and acquire this application's resources in the
    * mean time.
-   *
+   * 注意：这种替换是没有任何保证的;
+   * 同一集群上的另一个应用程序可以窃取此机会，同时获取该应用程序的资源。
    * @return whether the request is received.
    */
   private[spark] def killAndReplaceExecutor(executorId: String): Boolean = {
@@ -1810,7 +1829,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
   /**
    * Register an RDD to be persisted in memory and/or disk storage
-   * 注册一个RDD，它将被持久化到 内存 或 磁盘。
+   * 注册一个RDD，它将被持久化到 内存 或 磁盘。 具体怎么哪执行persist操作呢。
    */
   private[spark] def persistRDD(rdd: RDD[_]) {
     // 存入persistentRdds Map
@@ -1850,9 +1869,10 @@ class SparkContext(config: SparkConf) extends Logging {
         Utils.validateURL(uri)
         key = uri.getScheme match {
           // A JAR file which exists only on the driver node
-            /*一个只存在driver端的jar*/
+            /*一个只存在driver端的jar【用户上传的依赖jar和file应该会调用此】*/
           case null | "file" =>
             try {
+              /*返回文件的uri【这时候已经是文件服务中文件的地址，spark://port/jars/filename】*/
               env.rpcEnv.fileServer.addJar(new File(uri.getPath))
             } catch {
               case exc: FileNotFoundException =>
@@ -2082,7 +2102,9 @@ class SparkContext(config: SparkConf) extends Logging {
   * new了一个partitions.size长度的数组results，用来存储各个partition的计算结果；
   * 并构造了一个resultHandler函数，用于将partition的计算结果存入results(index, res) => results(index) = res；
   * 最后返回results*/
-  def runJob[T, U: ClassTag](
+  /*resultHandler函数：(index, res) => results(index) = res
+  * 见P327，*/
+   def runJob[T, U: ClassTag](
       rdd: RDD[T],
       func: (TaskContext, Iterator[T]) => U,
       partitions: Seq[Int]): Array[U] = {
@@ -2091,6 +2113,7 @@ class SparkContext(config: SparkConf) extends Logging {
     该函数的作用：以数组索引为分区id，将对应的分区计算结果存入数组。
     例如 results[1] = partition1的计算结果*/
     runJob[T, U](rdd, func, partitions, (index, res) => results(index) = res)
+    /*返回results*/
     results
   }
 
@@ -2105,12 +2128,14 @@ class SparkContext(config: SparkConf) extends Logging {
    * a result from one partition)
    */
   /*在上一个runJob基础之上
-  将用户的func转换为(TaskContext, Iterator[T]) => U【resultStage中规定的func格式】 */
+  将用户的func转换为(TaskContext, Iterator[T]) => U【resultStage中规定的func格式】 P*/
   def runJob[T, U: ClassTag](
       rdd: RDD[T],
       func: Iterator[T] => U,
       partitions: Seq[Int]): Array[U] = {
+    /*封装了用于定义的函数*/
     val cleanedFunc = clean(func)
+    /*函数体为cleanedFunc(it)，*/
     runJob(rdd, (ctx: TaskContext, it: Iterator[T]) => cleanedFunc(it), partitions)
   }
 
@@ -2139,7 +2164,9 @@ class SparkContext(config: SparkConf) extends Logging {
    * @return in-memory collection with a result of the job (each collection element will contain
    * a result from one partition)
    */
+  /*第一个runJob*/
   def runJob[T, U: ClassTag](rdd: RDD[T], func: Iterator[T] => U): Array[U] = {
+    /*0 until rdd.partitions.length为partitionId构成的序列*/
     runJob(rdd, func, 0 until rdd.partitions.length)
   }
 
@@ -2292,8 +2319,8 @@ class SparkContext(config: SparkConf) extends Logging {
    * If <tt>checkSerializable</tt> is set, <tt>clean</tt> will also proactively
    * check to see if <tt>f</tt> is serializable and throw a <tt>SparkException</tt>
    * if not.
-   *
-   * @param f the closure to clean
+   * 清理闭包，使其准备好序列化并发送到任务
+   * @param f the closure to clean 需要清理的闭包
    * @param checkSerializable whether or not to immediately check <tt>f</tt> for serializability
    * @throws SparkException if <tt>checkSerializable</tt> is set but <tt>f</tt> is not
    *   serializable
@@ -2362,6 +2389,7 @@ class SparkContext(config: SparkConf) extends Logging {
    */
   private def setupAndStartListenerBus(): Unit = {
     // Use reflection to instantiate listeners specified via `spark.extraListeners`
+    /*通过反射把用户通过它spark.extraListeners设置的监听器添加到事件总线listenerBus中*/
     try {
       val listenerClassNames: Seq[String] =
         conf.get("spark.extraListeners", "").split(',').map(_.trim).filter(_ != "")
@@ -2405,7 +2433,7 @@ class SparkContext(config: SparkConf) extends Logging {
           throw new SparkException(s"Exception when registering SparkListener", e)
         }
     }
-
+    /*启动事件总线*/
     listenerBus.start()
     _listenerBusStarted = true
   }
@@ -2699,13 +2727,14 @@ object SparkContext extends Logging {
   /**
    * Create a task scheduler based on a given master URL.
    * Return a 2-tuple of the scheduler backend and the task scheduler.
-   * 创建一个task scheduler根据给定的master URL。
+   * 创建一个task scheduler根据给定的master URL【也就是根据ClusterManager类型】。
    * 返回一个 SchedulerBackend 和 TaskScheduler 构成的 2-tuple
    */
   private def createTaskScheduler(
       sc: SparkContext,
       master: String,
       deployMode: String): (SchedulerBackend, TaskScheduler) = {
+    /*在此方法中没有使用deployMode参数*/
     import SparkMasterRegex._
 
     // When running locally, don't try to re-execute tasks on failure.
@@ -2778,6 +2807,9 @@ object SparkContext extends Logging {
         try {
           /*调用clusterManager的createTaskScheduler方法创建scheduler*/
           val scheduler = cm.createTaskScheduler(sc, masterUrl)
+          /*创建taskScheduler的后端调度接口SchedulerBackend，根据deployMode
+          * yarn-Cluster -> YarnClusterSchedulerBackend
+          * yarn-Client -> YarnClientSchedulerBackend*/
           val backend = cm.createSchedulerBackend(sc, masterUrl, scheduler)
           cm.initialize(scheduler, backend)
           (backend, scheduler)

@@ -22,6 +22,7 @@ import org.apache.spark.unsafe.memory.MemoryBlock;
 
 /**
  * An array of long values. Compared with native JVM arrays, this:
+ * 一个Long数组。与本机JVM数组相比，支持使用堆内和堆外内存，
  * <ul>
  *   <li>supports using both in-heap and off-heap memory</li>
  *   <li>has no bound checking, and thus can crash the JVM process when assert is turned off</li>
@@ -41,9 +42,9 @@ public final class LongArray {
   public LongArray(MemoryBlock memory) {
     assert memory.size() < (long) Integer.MAX_VALUE * 8: "Array size > 4 billion elements";
     this.memory = memory;
-    this.baseObj = memory.getBaseObject();
+    this.baseObj = memory.getBaseObject();  /*获取MemoryBlock的obj*/
     this.baseOffset = memory.getBaseOffset();
-    this.length = memory.size() / WIDTH;
+    this.length = memory.size() / WIDTH;  /*因为Long占8个字节，得到Long数组长度*/
   }
 
   public MemoryBlock memoryBlock() {

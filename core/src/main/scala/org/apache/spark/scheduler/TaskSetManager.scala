@@ -107,7 +107,7 @@ private[spark] class TaskSetManager(
       new TaskSetBlacklist(conf, stageId, clock)
     }
   }
-  /*正在运行的task集合*/
+  /*正在运行的taskid的集合*/
   val runningTasksSet = new HashSet[Long]
   /*正在运行的task数量*/
   override def runningTasks: Int = runningTasksSet.size
@@ -185,6 +185,7 @@ private[spark] class TaskSetManager(
   // of task index so that tasks with low indices get launched first.
   /*我们按照任务索引的相反顺序执行，这样低索引的任务就会首先启动。*/
   /*将所有任务添加到挂起addPendingTask列表中，按照索引从大到小*/
+  /*创建TaskSetManager的时候执行此方法*/
   for (i <- (0 until numTasks).reverse) {
     addPendingTask(i)
   }
@@ -761,8 +762,10 @@ private[spark] class TaskSetManager(
   /**
    * Marks the task as getting result and notifies the DAG Scheduler
    */
+  /*标记此task为获取到结果，并通知dagScheduler*/
   def handleTaskGettingResult(tid: Long): Unit = {
     val info = taskInfos(tid)
+    /*标记获取到结果的时间*/
     info.markGettingResult()
     sched.dagScheduler.taskGettingResult(info)
   }
@@ -770,6 +773,7 @@ private[spark] class TaskSetManager(
   /**
    * Check whether has enough quota to fetch the result with `size` bytes
    */
+  /*检查totalResultSize加上size大小后， 是否超过了Driver端能接受的maxResultSize（1g）*/
   def canFetchMoreResults(size: Long): Boolean = sched.synchronized {
     totalResultSize += size
     calculatedTasks += 1
@@ -787,6 +791,7 @@ private[spark] class TaskSetManager(
 
   /**
    * Marks a task as successful and notifies the DAGScheduler that the task has ended.
+   * 将任务标记为成功，并通知DAGScheduler任务已经结束。
    */
   def handleSuccessfulTask(tid: Long, result: DirectTaskResult[_]): Unit = {
     val info = taskInfos(tid)
@@ -799,6 +804,7 @@ private[spark] class TaskSetManager(
     // "result.value()" in "TaskResultGetter.enqueueSuccessfulTask" before reaching here.
     // Note: "result.value()" only deserializes the value when it's called at the first time, so
     // here "result.value()" just returns the value and won't block other threads.
+    /**/
     sched.dagScheduler.taskEnded(tasks(index), Success, result.value(), result.accumUpdates, info)
     // Kill any other attempts for the same task (since those are unnecessary now that one
     // attempt completed successfully).
@@ -1009,7 +1015,8 @@ private[spark] class TaskSetManager(
    * TODO: To make this scale to large jobs, we need to maintain a list of running tasks, so that
    * we don't scan the whole task set. It might also help to make this sorted by launch time.
    */
-  /*用于检查当前taskSetManager中是否有需要推断执行的任务*/
+  /*用于检查当前taskSetManager中是否有需要推断执行的任务
+  * minTimeToSpeculation：100ms 保证为任务启动备份任务前，已经运行大于等于100ms*/
   override def checkSpeculatableTasks(minTimeToSpeculation: Int): Boolean = {
     // Can't speculate if we only have one task, and no need to speculate if the task set is a
     // zombie.
@@ -1031,7 +1038,7 @@ private[spark] class TaskSetManager(
       /*取数组的中间值（0.5 * tasksSuccessful）四舍五入，即执行时间处于中间的时间*/
       val medianDuration = durations(min((0.5 * tasksSuccessful).round.toInt, durations.length - 1))
       /*计算进行推断执行的最小时间【如果大于此阀值将可能被推断执行】
-      = 1.5*medianDuration 和 minTimeToSpeculation之间的最大值*/
+      = 1.5*medianDuration 和 minTimeToSpeculation（100ms）之间的最大值*/
       val threshold = max(SPECULATION_MULTIPLIER * medianDuration, minTimeToSpeculation)
       // TODO: Threshold should also look at standard deviation of task durations and have a lower
       // bound based on that.

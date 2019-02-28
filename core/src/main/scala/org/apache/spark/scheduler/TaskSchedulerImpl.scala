@@ -225,6 +225,7 @@ private[spark] class TaskSchedulerImpl private[scheduler](
     val tasks = taskSet.tasks
     logInfo("Adding task set " + taskSet.id + " with " + tasks.length + " tasks")
     this.synchronized {
+      /*创建taskSetManager，默认为4此*/
       val manager = createTaskSetManager(taskSet, maxTaskFailures)
       val stage = taskSet.stageId
       val stageTaskSets =
@@ -254,10 +255,12 @@ private[spark] class TaskSchedulerImpl private[scheduler](
       }
       hasReceivedTask = true
     }
+    /*/*给调度池中的所有task分配资源*/*/
     backend.reviveOffers()
   }
 
   // Label as private[scheduler] to allow tests to swap in different task set managers if necessary
+  /*创建taskSetManager*/
   private[scheduler] def createTaskSetManager(
       taskSet: TaskSet,
       maxTaskFailures: Int): TaskSetManager = {
@@ -464,7 +467,7 @@ private[spark] class TaskSchedulerImpl private[scheduler](
   protected def shuffleOffers(offers: IndexedSeq[WorkerOffer]): IndexedSeq[WorkerOffer] = {
     Random.shuffle(offers)
   }
-
+  /*更新task状态【只有在此方法中使用了taskResultGetter】*/
   def statusUpdate(tid: Long, state: TaskState, serializedData: ByteBuffer) {
     var failedExecutor: Option[String] = None
     var reason: Option[ExecutorLossReason] = None
@@ -488,8 +491,10 @@ private[spark] class TaskSchedulerImpl private[scheduler](
               cleanupTaskState(tid)
               taskSet.removeRunningTask(tid)
               if (state == TaskState.FINISHED) {
+                /*处理成功的task*/
                 taskResultGetter.enqueueSuccessfulTask(taskSet, tid, serializedData)
               } else if (Set(TaskState.FAILED, TaskState.KILLED, TaskState.LOST).contains(state)) {
+                /*处理失败的task，【重新放入待处理列表，并通知DAGScheduler重新调度】*/
                 taskResultGetter.enqueueFailedTask(taskSet, tid, state, serializedData)
               }
             }
@@ -534,7 +539,7 @@ private[spark] class TaskSchedulerImpl private[scheduler](
     }
     dagScheduler.executorHeartbeatReceived(execId, accumUpdatesWithTaskIds, blockManagerId)
   }
-
+  /*标记此task为获取到结果，并通知dagScheduler*/
   def handleTaskGettingResult(taskSetManager: TaskSetManager, tid: Long): Unit = synchronized {
     taskSetManager.handleTaskGettingResult(tid)
   }

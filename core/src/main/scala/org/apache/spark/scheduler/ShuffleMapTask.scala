@@ -54,7 +54,7 @@ import org.apache.spark.shuffle.ShuffleWriter
 private[spark] class ShuffleMapTask(
     stageId: Int,
     stageAttemptId: Int,
-    taskBinary: Broadcast[Array[Byte]],
+    taskBinary: Broadcast[Array[Byte]], /*广播变量，dagScheduler提交taskSet前广播的变量 P344*/
     partition: Partition,
     @transient private var locs: Seq[TaskLocation],
     localProperties: Properties,
@@ -74,7 +74,7 @@ private[spark] class ShuffleMapTask(
   @transient private val preferredLocs: Seq[TaskLocation] = {
     if (locs == null) Nil else locs.toSet.toSeq
   }
-
+  /*返回值为MapStatus，对于ShuffleMapTask是状态信息并不是具体结果内容*/
   override def runTask(context: TaskContext): MapStatus = {
     // Deserialize the RDD using the broadcast variable.
     val threadMXBean = ManagementFactory.getThreadMXBean
@@ -83,8 +83,10 @@ private[spark] class ShuffleMapTask(
       threadMXBean.getCurrentThreadCpuTime
     } else 0L
     val ser = SparkEnv.get.closureSerializer.newInstance()
+    /*反序列化RDD使用到的Broadcast变量taskBinary，得到(rdd, dep)*/
     val (rdd, dep) = ser.deserialize[(RDD[_], ShuffleDependency[_, _, _])](
       ByteBuffer.wrap(taskBinary.value), Thread.currentThread.getContextClassLoader)
+    /*执行反序列化所用的时间 和 cpu时间*/
     _executorDeserializeTime = System.currentTimeMillis() - deserializeStartTime
     _executorDeserializeCpuTime = if (threadMXBean.isCurrentThreadCpuTimeSupported) {
       threadMXBean.getCurrentThreadCpuTime - deserializeStartCpuTime
@@ -92,10 +94,13 @@ private[spark] class ShuffleMapTask(
 
     var writer: ShuffleWriter[Any, Any] = null
     try {
+      /*获取SparkEnv中的shuffleManager*/
       val manager = SparkEnv.get.shuffleManager
+      /*从shuffleManager中获取shuffleWriter*/
       writer = manager.getWriter[Any, Any](dep.shuffleHandle, partitionId, context)
+      /*执行rdd的iterator方法，并利用shuffleWriter输出*/
       writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
-      writer.stop(success = true).get
+      writer.stop(success = true).get /*返回MapStatus*/
     } catch {
       case e: Exception =>
         try {

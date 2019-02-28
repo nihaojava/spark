@@ -77,17 +77,21 @@ private[spark] class SortShuffleManager(conf: SparkConf) extends ShuffleManager 
   /**
    * A mapping from shuffle ids to the number of mappers producing output for those shuffles.
    */
+  /*缓存shuffleid 和 此shuffle包含的map个数*/
   private[this] val numMapsForShuffle = new ConcurrentHashMap[Int, Int]()
 
   override val shuffleBlockResolver = new IndexShuffleBlockResolver(conf)
 
   /**
    * Register a shuffle with the manager and obtain a handle for it to pass to tasks.
+   * 向管理器注册shuffle，并获得将其传递给任务的句柄ShuffleHandle。
    */
   override def registerShuffle[K, V, C](
       shuffleId: Int,
-      numMaps: Int,
+      numMaps: Int, /*map数*/
       dependency: ShuffleDependency[K, V, C]): ShuffleHandle = {
+    /*如果不需要进行mapSideCombine 且 分区个数小于等于200，则可以绕过合并和排序
+    * 创建 BypassMergeSortShuffleHandle，否则继续向下*/
     if (SortShuffleWriter.shouldBypassMergeSort(SparkEnv.get.conf, dependency)) {
       // If there are fewer than spark.shuffle.sort.bypassMergeThreshold partitions and we don't
       // need map-side aggregation, then write numPartitions files directly and just concatenate
@@ -96,12 +100,14 @@ private[spark] class SortShuffleManager(conf: SparkConf) extends ShuffleManager 
       // having multiple files open at a time and thus more memory allocated to buffers.
       new BypassMergeSortShuffleHandle[K, V](
         shuffleId, numMaps, dependency.asInstanceOf[ShuffleDependency[K, V, V]])
+      /*默认为java序列化器，不支持SerializedShuffle*/
     } else if (SortShuffleManager.canUseSerializedShuffle(dependency)) {
       // Otherwise, try to buffer map outputs in a serialized form, since this is more efficient:
       new SerializedShuffleHandle[K, V](
         shuffleId, numMaps, dependency.asInstanceOf[ShuffleDependency[K, V, V]])
     } else {
       // Otherwise, buffer map outputs in a deserialized form:
+      /*否则，缓冲区映射以反序列化形式输出，创建BaseShuffleHandle*/
       new BaseShuffleHandle(shuffleId, numMaps, dependency)
     }
   }
@@ -109,25 +115,32 @@ private[spark] class SortShuffleManager(conf: SparkConf) extends ShuffleManager 
   /**
    * Get a reader for a range of reduce partitions (startPartition to endPartition-1, inclusive).
    * Called on executors by reduce tasks.
+   * reduceTask会调用此方法。获取shuffleReader【读取shuffle的输入数据】
    */
   override def getReader[K, C](
       handle: ShuffleHandle,
       startPartition: Int,
       endPartition: Int,
       context: TaskContext): ShuffleReader[K, C] = {
+    /*new一个BlockStoreShuffleReader*/
     new BlockStoreShuffleReader(
       handle.asInstanceOf[BaseShuffleHandle[K, _, C]], startPartition, endPartition, context)
   }
 
-  /** Get a writer for a given partition. Called on executors by map tasks. */
+  /** Get a writer for a given partition. Called on executors by map tasks.
+    * 为给定的partition【map任务】得到一个ShuffleWriter。executors上的map task会调用此方法。*/
   override def getWriter[K, V](
       handle: ShuffleHandle,
-      mapId: Int,
+      mapId: Int, /*partitionid*/
       context: TaskContext): ShuffleWriter[K, V] = {
+    /*将指定的shuffleid 和 对应的map任务数注册到 numMapsForShuffle*/
     numMapsForShuffle.putIfAbsent(
       handle.shuffleId, handle.asInstanceOf[BaseShuffleHandle[_, _, _]].numMaps)
+
+    /*根据ShuffleHandle类型，创建ShuffleWriter*/
     val env = SparkEnv.get
     handle match {
+        /*序列化的*/
       case unsafeShuffleHandle: SerializedShuffleHandle[K @unchecked, V @unchecked] =>
         new UnsafeShuffleWriter(
           env.blockManager,
@@ -137,6 +150,7 @@ private[spark] class SortShuffleManager(conf: SparkConf) extends ShuffleManager 
           mapId,
           context,
           env.conf)
+        /*绕过排序的*/
       case bypassMergeSortHandle: BypassMergeSortShuffleHandle[K @unchecked, V @unchecked] =>
         new BypassMergeSortShuffleWriter(
           env.blockManager,
@@ -145,6 +159,7 @@ private[spark] class SortShuffleManager(conf: SparkConf) extends ShuffleManager 
           mapId,
           context,
           env.conf)
+        /*基础的（也就是绕过排序的）*/
       case other: BaseShuffleHandle[K @unchecked, V @unchecked, _] =>
         new SortShuffleWriter(shuffleBlockResolver, other, mapId, context)
     }
@@ -182,11 +197,14 @@ private[spark] object SortShuffleManager extends Logging {
    * path or whether it should fall back to the original path that operates on deserialized objects.
    */
   def canUseSerializedShuffle(dependency: ShuffleDependency[_, _, _]): Boolean = {
+    /*shuffleId*/
     val shufId = dependency.shuffleId
+    /*分区数*/
     val numPartitions = dependency.partitioner.numPartitions
+    /*目前默认是java序列化器，*/
     if (!dependency.serializer.supportsRelocationOfSerializedObjects) {
       log.debug(s"Can't use serialized shuffle for shuffle $shufId because the serializer, " +
-        s"${dependency.serializer.getClass.getName}, does not support object relocation")
+        s"${dependency.serializer.getClass.getName}, does not support object relocation")/*不支持对象重定位*/
       false
     } else if (dependency.aggregator.isDefined) {
       log.debug(

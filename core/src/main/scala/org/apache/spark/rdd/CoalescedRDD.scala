@@ -64,6 +64,7 @@ private[spark] case class CoalescedRDDPartition(
 
 /**
  * Represents a coalesced RDD that has fewer partitions than its parent RDD
+ * 表示合并的RDD，其分区比其父RDD少
  * This class uses the PartitionCoalescer class to find a good partitioning of the parent RDD
  * so that each new partition has roughly the same number of parent partitions and that
  * the preferred location of each new partition overlaps with as many preferred locations of its
@@ -181,8 +182,10 @@ private class DefaultPartitionCoalescer(val balanceSlack: Double = 0.10)
   class PartitionLocations(prev: RDD[_]) {
 
     // contains all the partitions from the previous RDD that don't have preferred locations
+    /*包含以前RDD中没有首选位置的所有分区*/
     val partsWithoutLocs = ArrayBuffer[Partition]()
     // contains all the partitions from the previous RDD that have preferred locations
+    /*包含以前RDD中具有首选位置的所有分区*/
     val partsWithLocs = ArrayBuffer[(String, Partition)]()
 
     getAllPrefLocs(prev)

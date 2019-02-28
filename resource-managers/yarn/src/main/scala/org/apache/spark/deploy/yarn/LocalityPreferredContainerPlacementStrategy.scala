@@ -35,6 +35,7 @@ private[yarn] case class ContainerLocalityPreferences(nodes: Array[String], rack
  * the node ratio of pending tasks, number of required cores/containers and locality of current
  * existing and pending allocated containers. The target of this algorithm is to maximize the number
  * of tasks that would run locally.
+ * 该算法的目标是使最大化将在本地运行任务。
  *
  * Consider a situation in which we have 20 tasks that require (host1, host2, host3)
  * and 10 tasks that require (host1, host2, host4), besides each container has 2 cores

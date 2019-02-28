@@ -47,7 +47,7 @@ private[spark] trait SizeTracker {
 
   /** The value of 'numUpdates' at which we will take our next sample. */
   private var nextSampleNum: Long = _
-
+  /*重置采样初始值*/
   resetSamples()
 
   /**
@@ -92,6 +92,7 @@ private[spark] trait SizeTracker {
 
   /**
    * Estimate the current size of the collection in bytes. O(1) time.
+   * 估计集合的当前大小(以字节为单位)。O(1)时间。
    */
   def estimateSize(): Long = {
     assert(samples.nonEmpty)

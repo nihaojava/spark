@@ -353,7 +353,7 @@ class SparkHadoopUtil extends Logging {
 }
 
 object SparkHadoopUtil {
-
+  /**/
   private lazy val hadoop = new SparkHadoopUtil
   private lazy val yarn = try {
     Utils.classForName("org.apache.spark.deploy.yarn.YarnSparkHadoopUtil")
@@ -375,6 +375,7 @@ object SparkHadoopUtil {
    */
   private[spark] val UPDATE_INPUT_METRICS_INTERVAL_RECORDS = 1000
 
+  /*根据yarnMode获取具体的SparkHadoopUtil*/
   def get: SparkHadoopUtil = {
     // Check each time to support changing to/from YARN
     val yarnMode = java.lang.Boolean.parseBoolean(

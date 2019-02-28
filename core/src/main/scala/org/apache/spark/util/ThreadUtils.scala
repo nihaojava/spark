@@ -198,6 +198,7 @@ private[spark] object ThreadUtils {
    * hard to debug when [[ThreadLocal]]s leak to other tasks.
    */
   @throws(classOf[SparkException])
+  /*等待结果，超过atMost怎返回超时*/
   def awaitResult[T](awaitable: Awaitable[T], atMost: Duration): T = {
     try {
       // `awaitPermission` is not actually used anywhere so it's safe to pass in null here.

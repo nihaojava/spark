@@ -75,10 +75,10 @@ import org.apache.spark.util.random.{BernoulliCellSampler, BernoulliSampler, Poi
  *    an HDFS file)
  *
  * 在内部，每个RDD有五个特征：
- *  1. 一个分区集合
- *  2. 一个函数，用于计算每个分区
- *  3. 一个依赖集合对其他RDD们的
- *  4. 可选，一个分区器，对于key-value型RDD（）
+ *  1. 一个分区集合  【分区】
+ *  2. 一个函数，用于计算每个分区 【经过计算的到每个分区的数据】
+ *  3. 一个依赖集合对其他RDD们的 【数据来源】
+ *  4. 可选，一个分区器，对于key-value型RDD（） 【ShuffleWriter的时候，利用它分区】
  *  5. 可选，一个优先位置集合用于计算每个分区 [就是说要计算某个分区优先在哪些host主机上运行任务的主机列表]
  *
  * All of the scheduling and execution in Spark is done based on these methods, allowing each RDD
@@ -336,11 +336,14 @@ abstract class RDD[T: ClassTag](
    * subclasses of RDD.
    * RDD的内部方法，如果有cache从cache读取，否则进行计算。
    */
+  /*迭代计算的入口，执行task的时候调用此方法P450*/
   final def iterator(split: Partition, context: TaskContext): Iterator[T] = {
     // 如果有persist的话，先从persist获取
     if (storageLevel != StorageLevel.NONE) {
+      /*直接获取 或 计算*/
       getOrCompute(split, context)
     } else {
+      /*计算或从checkPoint读取*/
       computeOrReadCheckpoint(split, context)
     }
   }
@@ -379,7 +382,8 @@ abstract class RDD[T: ClassTag](
 
   /**
    * Compute an RDD partition or read it from a checkpoint if the RDD is checkpointing.
-   * 计算一个RDD分区，如果RDD是checkpointed 就从checkpoint 读取
+   * 计算或从checkpoint 读取一个RDD分区
+   * 如果RDD是checkpointed 就从checkpoint读取，否则计算
    */
   private[spark] def computeOrReadCheckpoint(split: Partition, context: TaskContext): Iterator[T] =
   {
@@ -393,13 +397,13 @@ abstract class RDD[T: ClassTag](
 
   /**
    * Gets or computes an RDD partition. Used by RDD.iterator() when an RDD is cached.
-   * 获取 或者 计算一个RDD的分区。 如果RDD被cache的话，调用RDD.iterator()
+   * 获取 或者 计算一个RDD的分区。【先从存储体系中获取，否则调用computeOrReadCheckpoint】
    */
   private[spark] def getOrCompute(partition: Partition, context: TaskContext): Iterator[T] = {
     val blockId = RDDBlockId(id, partition.index)
     var readCachedBlock = true
     // This method is called on executors, so we need call SparkEnv.get instead of sc.env.
-    // 这个方法会在executors上执行
+    // 这个方法会在executors上执行，【storageLevel不为null的话会持久化】
     SparkEnv.get.blockManager.getOrElseUpdate(blockId, storageLevel, elementClassTag, () => {
       readCachedBlock = false
       computeOrReadCheckpoint(partition, context)
@@ -438,6 +442,8 @@ abstract class RDD[T: ClassTag](
   def map[U: ClassTag](f: T => U): RDD[U] = withScope {
     val cleanF = sc.clean(f)
     new MapPartitionsRDD[U, T](this, (context, pid, iter) => iter.map(cleanF))
+    //(context, pid, iter) => iter.map(cleanF) 这是函数，
+    /*函数体是 iter.map(cleanF)，调用的scala原生的map函数 */
   }
 
   /**
@@ -462,13 +468,18 @@ abstract class RDD[T: ClassTag](
 
   /**
    * Return a new RDD containing the distinct elements in this RDD.
+   * 返回包含此RDD中不同元素的新RDD。
    */
+  /*【其实调用的是reduceByKey】*/
   def distinct(numPartitions: Int)(implicit ord: Ordering[T] = null): RDD[T] = withScope {
+    /*map(x => (x, null))是为了减少shuffleWriter的输出*/
+    /*(x, y) => x： 对相同key的value 进行此reduce操作*/
     map(x => (x, null)).reduceByKey((x, y) => x, numPartitions).map(_._1)
   }
 
   /**
    * Return a new RDD containing the distinct elements in this RDD.
+   * 返回包含此RDD中不同元素的新RDD。
    */
   def distinct(): RDD[T] = withScope {
     distinct(partitions.length)
@@ -476,13 +487,16 @@ abstract class RDD[T: ClassTag](
 
   /**
    * Return a new RDD that has exactly numPartitions partitions.
-   *
+   * 返回一个新的RDD，它具有准确的numpartition分区。
    * Can increase or decrease the level of parallelism in this RDD. Internally, this uses
    * a shuffle to redistribute data.
+   * 可以增加或减少此RDD中的并行度级别。在内部,它使用重新分配数据的洗牌。
    *
    * If you are decreasing the number of partitions in this RDD, consider using `coalesce`,
    * which can avoid performing a shuffle.
+   * 如果您正在减少这个RDD中的分区数量，考虑使用“coalesce”，它可以shuffle。
    */
+  /*【这个很重要】*/
   def repartition(numPartitions: Int)(implicit ord: Ordering[T] = null): RDD[T] = withScope {
     coalesce(numPartitions, shuffle = true)
   }
@@ -514,7 +528,8 @@ abstract class RDD[T: ClassTag](
       : RDD[T] = withScope {
     require(numPartitions > 0, s"Number of partitions ($numPartitions) must be positive.")
     if (shuffle) {
-      /** Distributes elements evenly across output partitions, starting from a random partition. */
+      /** Distributes elements evenly across output partitions, starting from a random partition.
+        * 从一个随机分区开始，在输出分区上均匀地分布元素。*/
       val distributePartition = (index: Int, items: Iterator[T]) => {
         var position = (new Random(index)).nextInt(numPartitions)
         items.map { t =>
@@ -980,6 +995,7 @@ abstract class RDD[T: ClassTag](
 
   /**
    * Applies a function f to all elements of this RDD.
+   * 将函数f应用于此RDD的所有元素。
    */
   def foreach(f: T => Unit): Unit = withScope {
     val cleanF = sc.clean(f)
@@ -988,6 +1004,7 @@ abstract class RDD[T: ClassTag](
 
   /**
    * Applies a function f to each partition of this RDD.
+   * 将函数f应用于此RDD的每个分区。
    */
   def foreachPartition(f: Iterator[T] => Unit): Unit = withScope {
     val cleanF = sc.clean(f)
@@ -1223,6 +1240,9 @@ abstract class RDD[T: ClassTag](
   /**
    * Return the number of elements in the RDD.
    */
+  /*func：Utils.getIteratorSize是求各个分区的元素个数；
+  * 返回结果是Array[分区1元素个数，分区2元素个数...]
+  * 然后执行sum*/
   def count(): Long = sc.runJob(this, Utils.getIteratorSize _).sum
 
   /**
@@ -1769,7 +1789,7 @@ abstract class RDD[T: ClassTag](
       .map(_.toBoolean).getOrElse(false)
 
   /** Returns the first parent RDD */
-  // 返回最近的（也就是第一个）父RDD
+  // 返回第一个父RDD【dependencies中有多个dependencie【也就是父RDD】】
   protected[spark] def firstParent[U: ClassTag]: RDD[U] = {
     dependencies.head.rdd.asInstanceOf[RDD[U]]
   }

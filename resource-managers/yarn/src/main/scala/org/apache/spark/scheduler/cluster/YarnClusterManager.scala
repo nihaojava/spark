@@ -22,6 +22,7 @@ import org.apache.spark.scheduler.{ExternalClusterManager, SchedulerBackend, Tas
 
 /**
  * Cluster Manager for creation of Yarn scheduler and backend
+ * 用于创建 TaskScheduler 和 TaskSchedulerBackend
  */
 private[spark] class YarnClusterManager extends ExternalClusterManager {
 

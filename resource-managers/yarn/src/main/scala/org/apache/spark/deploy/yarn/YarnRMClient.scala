@@ -68,22 +68,24 @@ private[spark] class YarnRMClient extends Logging {
     this.uiHistoryAddress = uiHistoryAddress
 
     logInfo("Registering the ApplicationMaster")
-    /*注册ApplicationMaster*/
+    /*注册ApplicationMaster，调用amClient向RM的AMS发送registerApplicationMaster消息【主要包含host和port】*/
     synchronized {
       amClient.registerApplicationMaster(Utils.localHostName(), 0, uiAddress)
       registered = true
     }
+    /*注册完成后创建YarnAllocator（ContainerAllocator）*/
     new YarnAllocator(driverUrl, driverRef, conf, sparkConf, amClient, getAttemptId(), securityMgr,
       localResources)
   }
 
   /**
    * Unregister the AM. Guaranteed to only be called once.
-   * 取消注册AM，只保证调用一次。
+   * 取消注册AM，保证只调用一次。
    *
    * @param status The final status of the AM.
    * @param diagnostics Diagnostics message to include in the final status.
    */
+  /*注销*/
   def unregister(status: FinalApplicationStatus, diagnostics: String = ""): Unit = synchronized {
     if (registered) {
       amClient.unregisterApplicationMaster(status, diagnostics, uiHistoryAddress)
@@ -108,6 +110,7 @@ private[spark] class YarnRMClient extends Logging {
   }
 
   /** Returns the maximum number of attempts to register the AM. */
+  /*如果不设置spark.yarn.maxAppAttempts，默认取yarn的设置（默认为AM尝试2次）*/
   def getMaxRegAttempts(sparkConf: SparkConf, yarnConf: YarnConfiguration): Int = {
     val sparkMaxAttempts = sparkConf.get(MAX_APP_ATTEMPTS).map(_.toInt)
     val yarnMaxAttempts = yarnConf.getInt(

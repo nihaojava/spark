@@ -83,11 +83,13 @@ private[spark] class Client(
     sparkConf.get(AM_MEMORY).toInt
   }
   /*Overhead是JVM进程中除Java堆以外占用的空间大小*/
+  /*max(amMemory*0.1,384)*/
   private val amMemoryOverhead = {
     val amMemoryOverheadEntry = if (isClusterMode) DRIVER_MEMORY_OVERHEAD else AM_MEMORY_OVERHEAD
     sparkConf.get(amMemoryOverheadEntry).getOrElse(
       math.max((MEMORY_OVERHEAD_FACTOR * amMemory).toLong, MEMORY_OVERHEAD_MIN)).toInt
   }
+  /*1个core*/
   private val amCores = if (isClusterMode) {
     sparkConf.get(DRIVER_CORES)
   } else {
@@ -184,7 +186,7 @@ private[spark] class Client(
       以及需要运行的java命令，AppMaster通过该命令在yarn节点上启动*/
       /*创建container上下文*/
       val containerContext = createContainerLaunchContext(newAppResponse)
-      /*创建ApplicationSubmission上下文*/
+      /*创建ApplicationSubmission上下文，见P81*/
       val appContext = createApplicationSubmissionContext(newApp, containerContext)
 
       // Finally, submit and monitor the application
@@ -236,8 +238,11 @@ private[spark] class Client(
       containerContext: ContainerLaunchContext): ApplicationSubmissionContext = {
     /*设置appContext的各种属性，然后返回它*/
     val appContext = newApp.getApplicationSubmissionContext
+    /*application名称，默认为spark*/
     appContext.setApplicationName(sparkConf.get("spark.app.name", "Spark"))
+    /*提交到的队列，默认为default*/
     appContext.setQueue(sparkConf.get(QUEUE_NAME))
+    /*containerContext*/
     appContext.setAMContainerSpec(containerContext)
     appContext.setApplicationType("SPARK")
 
@@ -260,12 +265,12 @@ private[spark] class Client(
     capability.setVirtualCores(amCores)
 
     sparkConf.get(AM_NODE_LABEL_EXPRESSION) match {
-      case Some(expr) =>
+      case Some(expr) =>/*构造ResourceRequest*/
         val amRequest = Records.newRecord(classOf[ResourceRequest])
-        amRequest.setResourceName(ResourceRequest.ANY)
-        amRequest.setPriority(Priority.newInstance(0))
-        amRequest.setCapability(capability)
-        amRequest.setNumContainers(1)
+        amRequest.setResourceName(ResourceRequest.ANY) /*任何节点*/
+        amRequest.setPriority(Priority.newInstance(0))  /*优先级为0*/
+        amRequest.setCapability(capability) /*资源*/
+        amRequest.setNumContainers(1) /*container个数*/
         amRequest.setNodeLabelExpression(expr)
         appContext.setAMContainerResourceRequest(amRequest)
       case None =>
@@ -314,7 +319,7 @@ private[spark] class Client(
     /*executor的内存*/
     val executorMem = executorMemory + executorMemoryOverhead
     if (executorMem > maxMem) {
-      /*yarn.scheduler.maximum-allocation-mb：container可以获得的最大值*/
+      /*yarn.scheduler.maximum-allocation-mb：container可以获得的最大值,默认为8g，最小值默认为1g*/
       /*yarn.nodemanager.resource.memory-mb：nodemanager节点管理的内存大小*/
       throw new IllegalArgumentException(s"Required executor memory ($executorMemory" +
         s"+$executorMemoryOverhead MB) is above the max threshold ($maxMem MB) of this cluster! " +
@@ -469,6 +474,7 @@ private[spark] class Client(
           val localPath = getQualifiedLocalPath(localURI, hadoopConf)
           val linkname = targetDir.map(_ + "/").getOrElse("") +
             destName.orElse(Option(localURI.getFragment())).getOrElse(localPath.getName())
+          /*将文件上传到hdfs*/
           val destPath = copyFileToRemote(destDir, localPath, replication)
           val destFs = FileSystem.get(destPath.toUri(), hadoopConf)
           distCacheMgr.addResource(
@@ -515,6 +521,7 @@ private[spark] class Client(
       sparkConf.get(SPARK_JARS) match {
         case Some(jars) =>
           // Break the list of jars to upload, and resolve globs.
+          /*断开要上传的jar列表，并解析globs。*/
           val localJars = new ArrayBuffer[String]()
           jars.foreach { jar =>
             if (!isLocalUri(jar)) {
@@ -739,6 +746,7 @@ private[spark] class Client(
 
   /**
    * Set up the environment for launching our ApplicationMaster container.
+   * 设置启动AM Container的环境
    */
   private def setupLaunchEnv(
       stagingDirPath: Path,
@@ -850,8 +858,9 @@ private[spark] class Client(
     : ContainerLaunchContext = {
     logInfo("Setting up container launch context for our AM")
     val appId = newAppResponse.getApplicationId
-    /*app相关资源在hdfs上存放的目录，*/
+    /*new一个app相关资源在hdfs上存放的目录，*/
     val appStagingDirPath = new Path(appStagingBaseDir, getAppStagingDir(appId))
+    /*pySpark运行方式需要的文件*/
     val pySparkArchives =
       if (sparkConf.get(IS_PYTHON_APP)) {
         findPySparkArchives()
@@ -859,7 +868,7 @@ private[spark] class Client(
         Nil
       }
     val launchEnv = setupLaunchEnv(appStagingDirPath, pySparkArchives)
-    /*将需要的资源（文件、jar等）上传到分布式缓存*/
+    /*将需要的资源（文件、jar等）上传到分布式缓存【python的情况下才使用，否则pySparkArchives为Nil】*/
     val localResources = prepareLocalResources(appStagingDirPath, pySparkArchives)
 
     val amContainer = Records.newRecord(classOf[ContainerLaunchContext])
@@ -1509,7 +1518,7 @@ private object Client extends Logging {
 
   /**
    * Joins all the path components using Path.SEPARATOR.
-   * 使用path . separator连接所有路径组件。
+   * 使用"/"连接所有路径组件。
    */
   def buildPath(components: String*): String = {
     components.mkString(Path.SEPARATOR)

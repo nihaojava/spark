@@ -129,6 +129,7 @@ final class ShuffleBlockFetcherIterator(
   @GuardedBy("this")
   private[this] var isZombie = false
 
+  /*new的时候调用*/
   initialize()
 
   // Decrements the buffer reference count.
@@ -203,7 +204,7 @@ final class ShuffleBlockFetcherIterator(
       }
     )
   }
-
+  /*划分本地和远端block*/
   private[this] def splitLocalRemoteBlocks(): ArrayBuffer[FetchRequest] = {
     // Make remote requests at most maxBytesInFlight / 5 in length; the reason to keep them
     // smaller than maxBytesInFlight is to allow multiple, parallel fetches from up to 5
@@ -218,6 +219,7 @@ final class ShuffleBlockFetcherIterator(
     // Tracks total number of blocks (including zero sized blocks)
     var totalBlocks = 0
     for ((address, blockInfos) <- blocksByAddress) {
+      /*统计所有block的总大小*/
       totalBlocks += blockInfos.size
       if (address.executorId == blockManager.blockManagerId.executorId) {
         // Filter out zero-sized blocks
@@ -280,12 +282,12 @@ final class ShuffleBlockFetcherIterator(
       }
     }
   }
-
+  /*初始化*/
   private[this] def initialize(): Unit = {
     // Add a task completion callback (called in both success case and failure case) to cleanup.
     context.addTaskCompletionListener(_ => cleanup())
 
-    // Split local and remote blocks.
+    // Split local and remote blocks. /*划分本地和远端block*/
     val remoteRequests = splitLocalRemoteBlocks()
     // Add the remote requests into our queue in a random order
     fetchRequests ++= Utils.randomize(remoteRequests)
@@ -406,6 +408,7 @@ final class ShuffleBlockFetcherIterator(
       (bytesInFlight == 0 ||
         (reqsInFlight + 1 <= maxReqsInFlight &&
           bytesInFlight + fetchRequests.front.size <= maxBytesInFlight))) {
+      /*fetchRequests.front 队列中第一个元素*/
       sendRequest(fetchRequests.dequeue())
     }
   }
@@ -460,6 +463,7 @@ object ShuffleBlockFetcherIterator {
 
   /**
    * A request to fetch blocks from a remote BlockManager.
+   * 从远程块管理器获取块的请求。
    * @param address remote BlockManager to fetch from.
    * @param blocks Sequence of tuple, where the first element is the block id,
    *               and the second element is the estimated size, used to calculate bytesInFlight.

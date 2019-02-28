@@ -70,11 +70,12 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
    * @note V and C can be different -- for example, one might group an RDD of type
    * (Int, Int) into an RDD of type (Int, Seq[Int]).
    */
+  /*最后到调用此方法*/
   @Experimental
   def combineByKeyWithClassTag[C](
-      createCombiner: V => C,
-      mergeValue: (C, V) => C,
-      mergeCombiners: (C, C) => C,
+      createCombiner: V => C,   /* 创建Combiner*/
+      mergeValue: (C, V) => C,  /*聚合value，将value加入Combiner*/
+      mergeCombiners: (C, C) => C,  /*对Combiner进行合并*/
       partitioner: Partitioner,
       mapSideCombine: Boolean = true,
       serializer: Serializer = null)(implicit ct: ClassTag[C]): RDD[(K, C)] = self.withScope {
@@ -91,6 +92,8 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
       self.context.clean(createCombiner),
       self.context.clean(mergeValue),
       self.context.clean(mergeCombiners))
+    /*如果父rdd分区器 和 当前要执行的分区器一样，那就没必要再分区了preservesPartitioning = true，执行MapPartitionsRDD
+    * 例如，一个rdd执行了groupByKey后【生成ShuffledRDD】，直接接着又执行groupByKey【此时生成MapPartitionsRDD】*/
     if (self.partitioner == Some(partitioner)) {
       self.mapPartitions(iter => {
         val context = TaskContext.get()
@@ -160,6 +163,8 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
    * allocation, both of these functions are allowed to modify and return their first argument
    * instead of creating a new U.
    */
+  /*seqOp：map端聚合函数
+  * combOp：reduce端聚合函数*/
   def aggregateByKey[U: ClassTag](zeroValue: U, partitioner: Partitioner)(seqOp: (U, V) => U,
       combOp: (U, U) => U): RDD[(K, U)] = self.withScope {
     // Serialize the zero value to a byte array so that we can get a new clone of it on each key
@@ -305,6 +310,7 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
    * Merge the values for each key using an associative and commutative reduce function. This will
    * also perform the merging locally on each mapper before sending results to a reducer, similarly
    * to a "combiner" in MapReduce.
+   * map端聚合函数 和 reduce端聚合一样
    */
   def reduceByKey(partitioner: Partitioner, func: (V, V) => V): RDD[(K, V)] = self.withScope {
     combineByKeyWithClassTag[V]((v: V) => v, func, func, partitioner)
@@ -324,6 +330,9 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
    * also perform the merging locally on each mapper before sending results to a reducer, similarly
    * to a "combiner" in MapReduce. Output will be hash-partitioned with the existing partitioner/
    * parallelism level.
+   * 使用关联和交换的reduce函数合并每个键的值。
+   * 在将结果发送到reducer之前，这也将在每个mapper上本地执行合并，类似于MapReduce中的“combiner”。
+   *
    */
   def reduceByKey(func: (V, V) => V): RDD[(K, V)] = self.withScope {
     reduceByKey(defaultPartitioner(self), func)
@@ -363,13 +372,15 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
 
   /**
    * Count the number of elements for each key, collecting the results to a local Map.
-   *
+   * 计算每个键的元素数，将结果收集到一个本地映射。
    * @note This method should only be used if the resulting map is expected to be small, as
    * the whole thing is loaded into the driver's memory.
    * To handle very large results, consider using rdd.mapValues(_ => 1L).reduceByKey(_ + _), which
    * returns an RDD[T, Long] instead of a map.
    */
+  /*action算子*/
   def countByKey(): Map[K, Long] = self.withScope {
+    /*value都转换为1，*/
     self.mapValues(_ => 1L).reduceByKey(_ + _).collect().toMap
   }
 
@@ -498,10 +509,14 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
    * @note As currently implemented, groupByKey must be able to hold all the key-value pairs for any
    * key in memory. If a key has too many values, it can result in an `OutOfMemoryError`.
    */
+  /*指定Partitioner，所以支持自定义Partitioner*/
   def groupByKey(partitioner: Partitioner): RDD[(K, Iterable[V])] = self.withScope {
     // groupByKey shouldn't use map side combine because map side combine does not
     // reduce the amount of data shuffled and requires all map side data be inserted
     // into a hash table, leading to more objects in the old gen.
+    /*groupByKey 不可以使用map端聚合【即ShuffleWriter输出时】，
+    * 我觉得是因为没有指定对value进行的操作，只能将相同key的value加到iterator中，
+    * 但是这样并不会减少ShuffleWrite的数据量*/
     val createCombiner = (v: V) => CompactBuffer(v)
     val mergeValue = (buf: CompactBuffer[V], v: V) => buf += v
     val mergeCombiners = (c1: CompactBuffer[V], c2: CompactBuffer[V]) => c1 ++= c2
@@ -522,20 +537,25 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
    * @note As currently implemented, groupByKey must be able to hold all the key-value pairs for any
    * key in memory. If a key has too many values, it can result in an `OutOfMemoryError`.
    */
+  /*如果指定了分区个数，则使用HashPartitioner*/
   def groupByKey(numPartitions: Int): RDD[(K, Iterable[V])] = self.withScope {
     groupByKey(new HashPartitioner(numPartitions))
   }
 
   /**
    * Return a copy of the RDD partitioned using the specified partitioner.
+   * 返回使用指定的分区器分区的RDD的副本。
    */
   def partitionBy(partitioner: Partitioner): RDD[(K, V)] = self.withScope {
     if (keyClass.isArray && partitioner.isInstanceOf[HashPartitioner]) {
       throw new SparkException("HashPartitioner cannot partition array keys.")
     }
+    // 比较两个HashPartitioner是否相同，算法一样，所以就是比较分区个数是否相同就可以
+    /*如果是相同的分区器，就不进行操作*/
     if (self.partitioner == Some(partitioner)) {
       self
     } else {
+      /*否则，生成ShuffledRDD*/
       new ShuffledRDD[K, V, V](self, partitioner)
     }
   }
@@ -635,11 +655,16 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
    * resulting RDD with the existing partitioner/parallelism level. The ordering of elements
    * within each group is not guaranteed, and may even differ each time the resulting RDD is
    * evaluated.
+   * 将RDD中每个键的值分组到单个序列中。
+散列—使用现有的分区器/并行级别对生成的RDD进行分区。
+不能保证每个组中的元素的顺序，甚至可能在每次计算结果RDD时都有所不同。
    *
    * @note This operation may be very expensive. If you are grouping in order to perform an
    * aggregation (such as a sum or average) over each key, using `PairRDDFunctions.aggregateByKey`
    * or `PairRDDFunctions.reduceByKey` will provide much better performance.
+   * 如果您分组是为了对每个键执行聚合(如sum或average)，则使用“PairRDDFunctions.aggregateByKey’或‘PairRDDFunctions.reduceByKey '将提供更好的性能。
    */
+  /*注意这个操作非常昂贵*/
   def groupByKey(): RDD[(K, Iterable[V])] = self.withScope {
     groupByKey(defaultPartitioner(self))
   }
@@ -752,7 +777,9 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
 
   /**
    * Pass each value in the key-value pair RDD through a map function without changing the keys;
+   * 通过map函数传递键值对RDD中的每个值，而不更改键值;
    * this also retains the original RDD's partitioning.
+   * 这也保留了原始RDD的分区。
    */
   def mapValues[U](f: V => U): RDD[(K, U)] = self.withScope {
     val cleanF = self.context.clean(f)
@@ -779,6 +806,7 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
    * return a resulting RDD that contains a tuple with the list of values
    * for that key in `this`, `other1`, `other2` and `other3`.
    */
+  /*CoGroupedRDD*/
   def cogroup[W1, W2, W3](other1: RDD[(K, W1)],
       other2: RDD[(K, W2)],
       other3: RDD[(K, W3)],

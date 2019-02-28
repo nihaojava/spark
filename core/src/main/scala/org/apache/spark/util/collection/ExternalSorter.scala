@@ -178,6 +178,7 @@ private[spark] class ExternalSorter[K, V, C](
   // user. (A partial ordering means that equal keys have comparator.compare(k, k) = 0, but some
   // non-equal keys also have this, so we need to do a later pass to find truly equal keys).
   // Note that we ignore this if no aggregator and no ordering are given.
+  /*如果定义了ordering，就使用定义的；如果定义了aggregator但没定义ordering，则new一个按照key的hash值比较器*/
   private val keyComparator: Comparator[K] = ordering.getOrElse(new Comparator[K] {
     override def compare(a: K, b: K): Int = {
       val h1 = if (a == null) 0 else a.hashCode()
@@ -186,6 +187,7 @@ private[spark] class ExternalSorter[K, V, C](
     }
   })
 
+  /*如果定义了ordering或aggregator，则有Comparator；否则为空*/
   private def comparator: Option[Comparator[K]] = {
     if (ordering.isDefined || aggregator.isDefined) {
       Some(keyComparator)
@@ -209,14 +211,14 @@ private[spark] class ExternalSorter[K, V, C](
    * Number of files this sorter has spilled so far.
    * Exposed for testing.
    * 到目前为止sorter溢写的文件数。
-   * 用于测试。
    */
   private[spark] def numSpills: Int = spills.size
 
+  /*将records记录迭代插入*/
   def insertAll(records: Iterator[Product2[K, V]]): Unit = {
     // TODO: stop combining if we find that the reduction factor isn't high
     val shouldCombine = aggregator.isDefined
-
+    /*如果定义了聚合器*/
     if (shouldCombine) {
       // Combine values in-memory first using our AppendOnlyMap
       val mergeValue = aggregator.get.mergeValue
@@ -245,7 +247,7 @@ private[spark] class ExternalSorter[K, V, C](
 
   /**
    * Spill the current in-memory collection to disk if needed.
-   *
+   * 如果需要，将当前内存中的集合溢出到磁盘。
    * @param usingMap whether we're using a map or buffer as our current in-memory collection
    */
   private def maybeSpillCollection(usingMap: Boolean): Unit = {
@@ -274,6 +276,7 @@ private[spark] class ExternalSorter[K, V, C](
    * @param collection whichever collection we're using (map or buffer)
    */
   override protected[this] def spill(collection: WritablePartitionedPairCollection[K, C]): Unit = {
+    /*按照comparator排序的迭代器*/
     val inMemoryIterator = collection.destructiveSortedWritablePartitionedIterator(comparator)
     val spillFile = spillMemoryIteratorToDisk(inMemoryIterator)
     spills += spillFile
@@ -299,6 +302,7 @@ private[spark] class ExternalSorter[K, V, C](
 
   /**
    * Spill contents of in-memory iterator to a temporary file on disk.
+   * 将内存中迭代器的内容溢出到磁盘上的临时文件。
    */
   private[this] def spillMemoryIteratorToDisk(inMemoryIterator: WritablePartitionedIterator)
       : SpilledFile = {
@@ -683,21 +687,27 @@ private[spark] class ExternalSorter[K, V, C](
    * Exposed for testing.
    */
   def partitionedIterator: Iterator[(Int, Iterator[Product2[K, C]])] = {
+    // 是否需要本地combine
     val usingMap = aggregator.isDefined
     val collection: WritablePartitionedPairCollection[K, C] = if (usingMap) map else buffer
+    // 如果没有发生磁盘溢写
     if (spills.isEmpty) {
       // Special case: if we have only in-memory data, we don't need to merge streams, and perhaps
       // we don't even need to sort by anything other than partition ID
+      // 而且不需要排序
       if (!ordering.isDefined) {
+        // 数据只是按照partitionId排序，并不会对key进行排序
         // The user hasn't requested sorted keys, so only sort by partition ID, not key
         groupByPartition(destructiveIterator(collection.partitionedDestructiveSortedIterator(None)))
       } else {
         // We do need to sort by both partition ID and key
+        // 否则我们需要先按照partitionId排序，然后分区内部对key进行排序
         groupByPartition(destructiveIterator(
           collection.partitionedDestructiveSortedIterator(Some(keyComparator))))
       }
     } else {
       // Merge spilled and in-memory data
+      // 如果发生了溢写操作，则需要将磁盘上溢写文件和内存里的数据进行合并
       merge(spills, destructiveIterator(
         collection.partitionedDestructiveSortedIterator(comparator)))
     }
@@ -714,21 +724,25 @@ private[spark] class ExternalSorter[K, V, C](
   /**
    * Write all the data added into this ExternalSorter into a file in the disk store. This is
    * called by the SortShuffleWriter.
-   *
+   * 这是由SortShuffleWriter调用。
+   * 要写入的块ID。
    * @param blockId block ID to write to. The index file will be blockId.name + ".index".
    * @return array of lengths, in bytes, of each partition of the file (used by map output tracker)
+   *         【返回每个分区的大小】供map output tracker使用
    */
   def writePartitionedFile(
       blockId: BlockId,
       outputFile: File): Array[Long] = {
 
     // Track location of each range in the output file
+    /*记录为每个分区输出的数据大小Bytes*/
     val lengths = new Array[Long](numPartitions)
     val writer = blockManager.getDiskWriter(blockId, outputFile, serInstance, fileBufferSize,
       context.taskMetrics().shuffleWriteMetrics)
 
     if (spills.isEmpty) {
       // Case where we only have in-memory data
+      /*只有内存数据的情况,就是没有溢写文件*/
       val collection = if (aggregator.isDefined) map else buffer
       val it = collection.destructiveSortedWritablePartitionedIterator(comparator)
       while (it.hasNext) {
@@ -741,6 +755,7 @@ private[spark] class ExternalSorter[K, V, C](
       }
     } else {
       // We must perform merge-sort; get an iterator by partition and write everything directly.
+      /*归并排序*/
       for ((id, elements) <- this.partitionedIterator) {
         if (elements.hasNext) {
           for (elem <- elements) {

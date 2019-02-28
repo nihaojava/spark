@@ -78,7 +78,7 @@ private[netty] class NettyStreamManager(rpcEnv: NettyRpcEnv)
     /* spark://host:port/files/ */
     s"${rpcEnv.address.toSparkURL}/files/${Utils.encodeFileNameToURIRawPath(file.getName())}"
   }
-
+  /*添加到本地文件服务，返回uri*/
   override def addJar(file: File): String = {
     val existingPath = jars.putIfAbsent(file.getName, file)
     require(existingPath == null || existingPath == file,

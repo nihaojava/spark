@@ -39,16 +39,17 @@ private[spark] class ShuffledRDDPartition(val idx: Int) extends Partition {
 // TODO: Make this return RDD[Product2[K, C]] or have some way to configure mutable pairs
 @DeveloperApi
 class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
-    @transient var prev: RDD[_ <: Product2[K, V]],
-    part: Partitioner)
-  extends RDD[(K, C)](prev.context, Nil) {
+    @transient var prev: RDD[_ <: Product2[K, V]],  /*父RDD【是一个】*/
+    part: Partitioner)  /*分区器，用于ShuffleWrite当前rdd*/
+  extends RDD[(K, C)](prev.context, Nil) {  /*Nil*/
 
   private var userSpecifiedSerializer: Option[Serializer] = None
-
+  /*排序器*/
   private var keyOrdering: Option[Ordering[K]] = None
-
+  /*聚合器*/
   private var aggregator: Option[Aggregator[K, V, C]] = None
 
+  /*是否在map端聚合*/
   private var mapSideCombine: Boolean = false
 
   /** Set a serializer for this RDD's shuffle, or null to use the default (spark.serializer) */
@@ -75,21 +76,27 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
     this
   }
 
+  /*获取依赖Dependency序列*/
   override def getDependencies: Seq[Dependency[_]] = {
     val serializer = userSpecifiedSerializer.getOrElse {
       val serializerManager = SparkEnv.get.serializerManager
       if (mapSideCombine) {
         serializerManager.getSerializer(implicitly[ClassTag[K]], implicitly[ClassTag[C]])
       } else {
+        /*默认执行*/
         serializerManager.getSerializer(implicitly[ClassTag[K]], implicitly[ClassTag[V]])
       }
     }
+    /*new一个ShuffleDependency，
+    **/
     List(new ShuffleDependency(prev, part, serializer, keyOrdering, aggregator, mapSideCombine))
   }
 
   override val partitioner = Some(part)
 
   override def getPartitions: Array[Partition] = {
+    /*Array.tabulate(n: Int)(f: Int => T): Array[T]
+    * 返回Array[f(0),f(1)...f(n-1)]*/
     Array.tabulate[Partition](part.numPartitions)(i => new ShuffledRDDPartition(i))
   }
 
@@ -98,9 +105,12 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
     val dep = dependencies.head.asInstanceOf[ShuffleDependency[K, V, C]]
     tracker.getPreferredLocationsForShuffle(dep, partition.index)
   }
-
+  /*shuffle read*/
   override def compute(split: Partition, context: TaskContext): Iterator[(K, C)] = {
+    /*会调用当前的getDependencies方法，获取第一个ShuffleDependency【对于shuffleRDD，ShuffleDependency也就一个】*/
     val dep = dependencies.head.asInstanceOf[ShuffleDependency[K, V, C]]
+    /*得到ShuffleReader，调用它的read方法读取reduce所需的数据，返回Iterator[(K, C)]*/
+    /*split.index就是reduceid*/
     SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context)
       .read()
       .asInstanceOf[Iterator[(K, C)]]

@@ -22,8 +22,8 @@ import scala.collection.mutable.ArrayBuffer
 // TODO: Add code and support for ensuring that yarn resource 'tasks' are location aware !
 private[spark] class ClientArguments(args: Array[String]) {
 
-  var userJar: String = null
-  var userClass: String = null
+  var userJar: String = null  /*用户写的sparkApplication jar*/
+  var userClass: String = null  /*其中的类*/
   var primaryPyFile: String = null
   var primaryRFile: String = null
   var userArgs: ArrayBuffer[String] = new ArrayBuffer[String]()

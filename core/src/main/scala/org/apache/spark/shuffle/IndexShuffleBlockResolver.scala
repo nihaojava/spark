@@ -190,16 +190,21 @@ private[spark] class IndexShuffleBlockResolver(
       }
     }
   }
-
+  /*获取指定ShuffleBlockId对应的数据
+  * BlockManager的getBlockData方法判断如果是ShuffleBlock会调用此方法*/
   override def getBlockData(blockId: ShuffleBlockId): ManagedBuffer = {
     // The block is actually going to be a range of a single map output file for this map, so
     // find out the consolidated file, then the offset within that from our index
+    /*获取索引文件*/
     val indexFile = getIndexFile(blockId.shuffleId, blockId.mapId)
 
     val in = new DataInputStream(new FileInputStream(indexFile))
     try {
+      /*跳过reduceId * 8个字节，long占8个字节*/
       ByteStreams.skipFully(in, blockId.reduceId * 8)
+      /*当前reduce所需shuffle数据开始的偏移量*/
       val offset = in.readLong()
+      /*结束的偏移量*/
       val nextOffset = in.readLong()
       new FileSegmentManagedBuffer(
         transportConf,
@@ -215,7 +220,7 @@ private[spark] class IndexShuffleBlockResolver(
 }
 
 private[spark] object IndexShuffleBlockResolver {
-  // No-op reduce ID used in interactions with disk store.
+  // No-op reduce ID used in interactions with disk store. 与磁盘存储交互时使用的No-op reduce ID。
   // The disk store currently expects puts to relate to a (map, reduce) pair, but in the sort
   // shuffle outputs for several reduces are glommed into a single file.
   val NOOP_REDUCE_ID = 0

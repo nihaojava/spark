@@ -40,7 +40,7 @@ private[spark] class SortShuffleWriter[K, V, C](
   private val dep = handle.dependency
 
   private val blockManager = SparkEnv.get.blockManager
-
+  /*排序器*/
   private var sorter: ExternalSorter[K, V, _] = null
 
   // Are we in the process of stopping? Because map tasks can call stop() with success = true
@@ -48,7 +48,7 @@ private[spark] class SortShuffleWriter[K, V, C](
   // we don't try deleting files, etc twice.
   // 我们正在停止吗？
   private var stopping = false
-
+  /*map 任务的状态*/
   private var mapStatus: MapStatus = null
 
   private val writeMetrics = context.taskMetrics().shuffleWriteMetrics
@@ -59,7 +59,7 @@ private[spark] class SortShuffleWriter[K, V, C](
     * */
   override def write(records: Iterator[Product2[K, V]]): Unit = {
     // 创建ExternalSorter
-    sorter = if (dep.mapSideCombine) {
+    sorter = if (dep.mapSideCombine) {/*是否在map端聚合，必须要求定义了聚合器*/
       require(dep.aggregator.isDefined, "Map-side combine without Aggregator specified!")
       new ExternalSorter[K, V, C](
         context, dep.aggregator, Some(dep.partitioner), dep.keyOrdering, dep.serializer)
@@ -67,21 +67,31 @@ private[spark] class SortShuffleWriter[K, V, C](
       // In this case we pass neither an aggregator nor an ordering to the sorter, because we don't
       // care whether the keys get sorted in each partition; that will be done on the reduce side
       // if the operation being run is sortByKey.
+      /*在这种情况下，我们既不传递聚合器也不传递排序给排序器，因为我们不关心每个分区中的键是否排序；
+      * 如果正在运行的操作是sortByKey，那么这将在reduce端完成。*/
       new ExternalSorter[K, V, V](
         context, aggregator = None, Some(dep.partitioner), ordering = None, dep.serializer)
     }
-    // 将map任务的输出记录插入到缓存中
+    // 将map任务的输出记录插入到缓存中【一条一条的写，可能溢写临时文件】
     sorter.insertAll(records)
 
     // Don't bother including the time to open the merged output file in the shuffle write time,
     // because it just opens a single file, so is typically too fast to measure accurately
     // (see SPARK-3570).
+    /*获取shuffleId的输出File*/
     val output = shuffleBlockResolver.getDataFile(dep.shuffleId, mapId)
+    /*在此路径下new一个临时文件*/
     val tmp = Utils.tempFileWith(output)
     try {
+      /*new一个ShuffleBlockId*/
       val blockId = ShuffleBlockId(dep.shuffleId, mapId, IndexShuffleBlockResolver.NOOP_REDUCE_ID)
+      /*将产生的shuffle数据，持久化【溢写的和内存中的合并成一个文件【如果设置了聚合器和排序器，合并前要进行聚合和排序】】
+      * 这里的排序器是指同一个分区id内再按照key进行排序【】*/
       val partitionLengths = sorter.writePartitionedFile(blockId, tmp)
+      /*根据上一步生成的data文件，创建index文件，【以便让reduce知道取哪一段数据】*/
       shuffleBlockResolver.writeIndexFileAndCommit(dep.shuffleId, mapId, partitionLengths, tmp)
+      /*new MapStatus*/
+      /*shuffleServerId也就是BlockManagerId 和 此map任务为各个分区输出的长度 Array[Long]*/
       mapStatus = MapStatus(blockManager.shuffleServerId, partitionLengths)
     } finally {
       if (tmp.exists() && !tmp.delete()) {
@@ -91,6 +101,7 @@ private[spark] class SortShuffleWriter[K, V, C](
   }
 
   /** Close this writer, passing along whether the map completed */
+  /*关闭writer，返回Option[MapStatus]*/
   override def stop(success: Boolean): Option[MapStatus] = {
     try {
       if (stopping) {
@@ -117,10 +128,11 @@ private[spark] class SortShuffleWriter[K, V, C](
 private[spark] object SortShuffleWriter {
   def shouldBypassMergeSort(conf: SparkConf, dep: ShuffleDependency[_, _, _]): Boolean = {
     // We cannot bypass sorting if we need to do map-side aggregation.
-    if (dep.mapSideCombine) {
+    /*如果需要进行mapSideCombine，则无法绕过排序。*/
+    if (dep.mapSideCombine) {/*必须定义aggregator聚合器*/
       require(dep.aggregator.isDefined, "Map-side combine without Aggregator specified!")
       false
-    } else {
+    } else {/*如果不需要进行mapSideCombine 且 分区个数小于等于200，则可以绕过排序*/
       val bypassMergeThreshold: Int = conf.getInt("spark.shuffle.sort.bypassMergeThreshold", 200)
       dep.partitioner.numPartitions <= bypassMergeThreshold
     }

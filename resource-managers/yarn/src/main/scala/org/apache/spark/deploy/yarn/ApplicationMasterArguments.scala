@@ -26,7 +26,7 @@ class ApplicationMasterArguments(val args: Array[String]) {
   var primaryPyFile: String = null
   var primaryRFile: String = null
   var userArgs: Seq[String] = Nil
-  var propertiesFile: String = null
+  var propertiesFile: String = null /*参数文件*/
 
   parseArgs(args.toList)
 

@@ -42,6 +42,7 @@ import org.apache.spark.util.Utils
 
 /**
  * Contains util methods to interact with Hadoop from spark.
+ * 包含从spark与Hadoop交互的工具方法。
  */
 class YarnSparkHadoopUtil extends SparkHadoopUtil {
 
@@ -98,9 +99,11 @@ class YarnSparkHadoopUtil extends SparkHadoopUtil {
       credentialUpdater = null
     }
   }
-
+  /*获取ContainerId对象*/
   private[spark] def getContainerId: ContainerId = {
+    /*containerIdString值为CONTAINER_ID*/
     val containerIdString = System.getenv(ApplicationConstants.Environment.CONTAINER_ID.name())
+    /*转换为ContainerId对象*/
     ConverterUtils.toContainerId(containerIdString)
   }
 }
@@ -109,6 +112,8 @@ object YarnSparkHadoopUtil {
   // Additional memory overhead
   // 10% was arrived at experimentally. In the interest of minimizing memory waste while covering
   // the common cases. Memory overhead tends to grow with container size.
+  /*额外的内存开销10%是通过实验得出的。为了在覆盖普通情况的同时尽量减少内存浪费。
+  * 为了在覆盖普通情况的同时尽量减少内存浪费。内存开销往往随着容器的大小而增长。*/
 
   val MEMORY_OVERHEAD_FACTOR = 0.10
   val MEMORY_OVERHEAD_MIN = 384L
@@ -119,6 +124,8 @@ object YarnSparkHadoopUtil {
 
   // All RM requests are issued with same priority : we do not (yet) have any distinction between
   // request types (like map/reduce in hadoop for example)
+  /*所有RM请求都以相同的优先级发出，没有向MR中根据任务类型 区分了三种优先级*/
+  /*1比MR中的task优先级都高，会优先为其分配*/
   val RM_REQUEST_PRIORITY = Priority.newInstance(1)
 
   def get: YarnSparkHadoopUtil = {

@@ -29,7 +29,8 @@ import org.apache.spark.internal.Logging
  * in scope. Ordering objects already exist for all of the standard primitive types. Users can also
  * define their own orderings for custom types, or to override the default ordering. The implicit
  * ordering that is in the closest scope will be used.
- *
+ * 对于所有标准基元类型，已经存在排序对象。
+ * 用户还可以为自定义类型定义自己的ordering，或者覆盖默认ordering。将使用最接近范围内的隐式转换。
  * {{{
  *   import org.apache.spark.SparkContext._
  *
@@ -54,12 +55,15 @@ class OrderedRDDFunctions[K : Ordering : ClassTag,
    * `collect` or `save` on the resulting RDD will return or output an ordered list of records
    * (in the `save` case, they will be written to multiple `part-X` files in the filesystem, in
    * order of the keys).
+   * 按键对RDD排序，这样每个分区都包含一个元素的排序范围。
    */
   // TODO: this currently doesn't work on P other than Tuple2!
   def sortByKey(ascending: Boolean = true, numPartitions: Int = self.partitions.length)
       : RDD[(K, V)] = self.withScope
   {
+    /*将创建一个RangePartitioner*/
     val part = new RangePartitioner(numPartitions, self, ascending)
+    /*创建ShuffledRDD，并设定ordering*/
     new ShuffledRDD[K, V, V](self, part)
       .setKeyOrdering(if (ascending) ordering else ordering.reverse)
   }

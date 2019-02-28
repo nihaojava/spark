@@ -84,6 +84,7 @@ package object config {
     .doc("Name of the Kerberos principal.")
     .stringConf.createOptional
 
+  /*为用户指定的 --num-executors*/
   private[spark] val EXECUTOR_INSTANCES = ConfigBuilder("spark.executor.instances")
     .intConf
     .createOptional

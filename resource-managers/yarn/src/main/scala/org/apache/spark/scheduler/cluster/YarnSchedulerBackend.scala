@@ -137,12 +137,15 @@ private[spark] abstract class YarnSchedulerBackend(
    * Request executors from the ApplicationMaster by specifying the total number desired.
    * This includes executors already pending or running.
    */
+  /*通过此方法向yarnSchedulerEndpoint发送Request executors消息，通过ApplicationMaster申请*/
   override def doRequestTotalExecutors(requestedTotal: Int): Future[Boolean] = {
     yarnSchedulerEndpointRef.ask[Boolean](prepareRequestExecutors(requestedTotal))
   }
 
   /**
    * Request that the ApplicationMaster kill the specified executors.
+   * 向自身的yarnSchedulerEndpointRef发送请求杀死指定指定的executors；
+   * yarnSchedulerEndpointRef收到该请求后会向ApplicationMaster发送KillExecutors消息
    */
   override def doKillExecutors(executorIds: Seq[String]): Future[Boolean] = {
     yarnSchedulerEndpointRef.ask[Boolean](KillExecutors(executorIds))
@@ -281,6 +284,7 @@ private[spark] abstract class YarnSchedulerBackend(
 
 
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
+      /*调用此方法*/
       case r: RequestExecutors =>
         amEndpoint match {
           case Some(am) =>
@@ -294,7 +298,7 @@ private[spark] abstract class YarnSchedulerBackend(
             logWarning("Attempted to request executors before the AM has registered!")
             context.reply(false)
         }
-
+      /*向AM发送消息杀死executor*/
       case k: KillExecutors =>
         amEndpoint match {
           case Some(am) =>

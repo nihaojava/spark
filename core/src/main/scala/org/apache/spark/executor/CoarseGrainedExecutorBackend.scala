@@ -47,7 +47,9 @@ private[spark] class CoarseGrainedExecutorBackend(
   extends ThreadSafeRpcEndpoint with ExecutorBackend with Logging {
 
   private[this] val stopping = new AtomicBoolean(false)
+  /*Executor*/
   var executor: Executor = null
+  /*RpcEndpointRef*/
   @volatile var driver: Option[RpcEndpointRef] = None
 
   // If this CoarseGrainedExecutorBackend is changed to support multiple threads, then this may need
@@ -135,7 +137,7 @@ private[spark] class CoarseGrainedExecutorBackend(
     }
   }
 
-  /*向Driver*/
+  /*向Driver发送StatusUpdate消息*/
   override def statusUpdate(taskId: Long, state: TaskState, data: ByteBuffer) {
     /*new一个StatusUpdate（也就是要发送的消息）*/
     val msg = StatusUpdate(executorId, taskId, state, data)

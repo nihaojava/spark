@@ -50,6 +50,7 @@ import org.apache.spark.util._
  * Common application master functionality for Spark on Yarn.
  * 针对Spark on Yarn实现的一个通用的application master
  */
+/*新建ApplicationMaster的时候需要一个RMClient，它来和RM通信*/
 private[spark] class ApplicationMaster(
     args: ApplicationMasterArguments,
     client: YarnRMClient)
@@ -65,12 +66,16 @@ private[spark] class ApplicationMaster(
 
   // Default to twice the number of executors (twice the maximum number of executors if dynamic
   // allocation is enabled), with a minimum of 3.
-  /*默认为executors数量的两倍(如果启用动态分配，则为最大executors数量的两倍)，最小值为3。*/
+  /*默认为executors数量的两倍【为用户指定的 --num-executors】
+  (如果启用动态分配，则为最大executors数量的两倍)，最小值为3。*/
   private val maxNumExecutorFailures = {
+    /*有效的Executors个数*/
     val effectiveNumExecutors =
       if (Utils.isDynamicAllocationEnabled(sparkConf)) {
+        /*启动动态分配，则为动态分配设置的最大Executors个数（如果没设置为int最大值）*/
         sparkConf.get(DYN_ALLOCATION_MAX_EXECUTORS)
       } else {
+        /*默认为0*/
         sparkConf.get(EXECUTOR_INSTANCES).getOrElse(0)
       }
     // By default, effectiveNumExecutors is Int.MaxValue if dynamic allocation is enabled. We need
@@ -89,7 +94,7 @@ private[spark] class ApplicationMaster(
   @volatile private var userClassThread: Thread = _
 
   @volatile private var reporterThread: Thread = _
-  /*用于向RM申请资源Container*/
+  /*和RM通信的组件，用于向RM注册AM、申请资源Container、注销AM*/
   @volatile private var allocator: YarnAllocator = _
 
   // Lock for controlling the allocator (heartbeat) thread.
@@ -118,6 +123,7 @@ private[spark] class ApplicationMaster(
   private var nextAllocationInterval = initialAllocationInterval
 
   private var rpcEnv: RpcEnv = null
+  /*用来和Driver端通信*/
   private var amEndpoint: RpcEndpointRef = _
 
   // In cluster mode, used to tell the AM when the user's SparkContext has been initialized.
@@ -190,9 +196,10 @@ private[spark] class ApplicationMaster(
   def getAttemptId(): ApplicationAttemptId = {
     client.getAttemptId()
   }
-
+  /*在main函数里运行此方法*/
   final def run(): Int = {
     try {
+      /*获取appAttemptId*/
       val appAttemptId = client.getAttemptId()
 
       var attemptID: Option[String] = None
@@ -214,6 +221,7 @@ private[spark] class ApplicationMaster(
         attemptID = Option(appAttemptId.getAttemptId.toString)
       }
 
+      /*保存调用者上下文*/
       new CallerContext(
         "APPMASTER", sparkConf.get(APP_CALLER_CONTEXT),
         Option(appAttemptId.getApplicationId.toString), attemptID).setCurrentContext()
@@ -223,6 +231,7 @@ private[spark] class ApplicationMaster(
       val fs = FileSystem.get(yarnConf)
 
       // This shutdown hook should run *after* the SparkContext is shut down.
+      /*添加关闭钩子，在sparkContext退出的时候触发*/
       val priority = ShutdownHookManager.SPARK_CONTEXT_SHUTDOWN_PRIORITY - 1
       ShutdownHookManager.addShutdownHook(priority) { () =>
         val maxAppAttempts = client.getMaxRegAttempts(sparkConf, yarnConf)
@@ -255,6 +264,7 @@ private[spark] class ApplicationMaster(
 
       // If the credentials file config is present, we must periodically renew tokens. So create
       // a new AMDelegationTokenRenewer
+      /*授权相关*/
       if (sparkConf.contains(CREDENTIALS_FILE_PATH.key)) {
         // If a principal and keytab have been set, use that to create new credentials for executors
         // periodically
@@ -264,10 +274,10 @@ private[spark] class ApplicationMaster(
       }
 
       if (isClusterMode) {
-        /*如果是cluster模式*/
+        /*如果是cluster模式，运行driver*/
         runDriver(securityMgr)
       } else {
-        /*如果是client模式*/
+        /*如果是client模式，运行ExecutorLauncher*/
         runExecutorLauncher(securityMgr)
       }
     } catch {
@@ -340,7 +350,7 @@ private[spark] class ApplicationMaster(
   private def sparkContextInitialized(sc: SparkContext) = {
     sparkContextPromise.success(sc)
   }
-
+  /*向RM注册自己，然后申请一次资源，启动reporterThread心跳线程*/
   private def registerAM(
       _sparkConf: SparkConf,
       _rpcEnv: RpcEnv,
@@ -371,7 +381,7 @@ private[spark] class ApplicationMaster(
       dummyRunner.launchContextDebugInfo()
     }
 
-    /*向RM注册一个application master，返回allocator*/
+    /*向RM注册一个application master，返回Containerallocator*/
     allocator = client.register(driverUrl,
       driverRef,
       yarnConf,
@@ -406,7 +416,7 @@ private[spark] class ApplicationMaster(
     driverEndpoint
   }
 
-  /*cluster下运行*/
+  /*cluster下运行，启动Driver*/
   private def runDriver(securityMgr: SecurityManager): Unit = {
     addAmIpFilter()
     /*启动Driver(用户application)，使用一个单独的线程运行，线程名字为Driver*/
@@ -425,11 +435,13 @@ private[spark] class ApplicationMaster(
       /*获取到SparkContext*/
       if (sc != null) {
         rpcEnv = sc.env.rpcEnv
+        /*创建一个RpcEndpoint（amEndpoint）用于和Driver交流；
+        * 返回的是drvierEndpoint的driverRef*/
         val driverRef = runAMEndpoint(
-          sc.getConf.get("spark.driver.host"),
-          sc.getConf.get("spark.driver.port"),
+          sc.getConf.get("spark.driver.host"),  /*drvierEndpoint所在的host*/
+          sc.getConf.get("spark.driver.port"), /*drvierEndpoint所在的port*/
           isClusterMode = true)
-        /*注册AM*/
+        /*向RM注册AM（期间会启动reporterThread心跳线程）*/
         registerAM(sc.getConf, rpcEnv, driverRef, sc.ui.map(_.webUrl).getOrElse(""),
           securityMgr)
       } else {
@@ -456,20 +468,23 @@ private[spark] class ApplicationMaster(
     val port = sparkConf.get(AM_PORT)
     rpcEnv = RpcEnv.create("sparkYarnAM", Utils.localHostName, port, sparkConf, securityMgr,
       clientMode = true)
+    /*等待可以连接上sparkDriver，然后创建一个RpcEndpoint（AmEndpoint）用于和Driver通信，
+    * 返回的是DriverEndPoint的driverRef，为了下面registerAM中new ContainerAllocation使用*/
     val driverRef = waitForSparkDriver()
     addAmIpFilter()
-    /*注册AM*/
+    /*向RM注册AM（期间会启动reporterThread心跳线程）*/
     registerAM(sparkConf, rpcEnv, driverRef, sparkConf.get("spark.driver.appUIAddress", ""),
       securityMgr)
 
     // In client mode the actor will stop the reporter thread.
+    /*等待reporterThread心跳线程直到运行结束*/
     reporterThread.join()
   }
 
-  /*心跳和RM通信*/
+  /*心跳和RM通信，如果没有等待的Allocate每隔3s，如果有每隔400ms*/
   private def launchReporterThread(): Thread = {
     // The number of failures in a row until Reporter thread give up
-    /*直到报告线程放弃为止的连续失败次数*/
+    /*直到报告线程放弃为止的连续失败次数，默认为5*/
     val reporterMaxFailures = sparkConf.get(MAX_REPORTER_THREAD_FAILURES)
 
     val t = new Thread {
@@ -477,6 +492,8 @@ private[spark] class ApplicationMaster(
         var failureCount = 0
         while (!finished) {
           try {
+            /*如果失败的executors个数 达到了 最大失败限制次数（默认为executor数的两倍），
+            * Application失败，AM退出*/
             if (allocator.getNumExecutorsFailed >= maxNumExecutorFailures) {
               finish(FinalApplicationStatus.FAILED,
                 ApplicationMaster.EXIT_MAX_EXECUTOR_FAILURES,
@@ -505,6 +522,7 @@ private[spark] class ApplicationMaster(
               }
           }
           try {
+            /*等待的Allocate个数【一次心跳请求资源为一个Allocate】*/
             val numPendingAllocate = allocator.getPendingAllocate.size
             var sleepStart = 0L
             var sleepInterval = 200L // ms
@@ -580,7 +598,7 @@ private[spark] class ApplicationMaster(
         logError("Failed to cleanup staging dir " + stagingDirPath, ioe)
     }
   }
-
+  /*等待SparkDriver可通信*/
   private def waitForSparkDriver(): RpcEndpointRef = {
     logInfo("Waiting for Spark driver to be reachable.")
     var driverUp = false
@@ -596,7 +614,7 @@ private[spark] class ApplicationMaster(
 
     while (!driverUp && !finished && System.currentTimeMillis < deadline) {
       try {
-        /*new 一个Socket测试Driver是否可用*/
+        /*new 一个Socket测试Driver是否可用，可达后退出while循环*/
         val socket = new Socket(driverHost, driverPort)
         socket.close()
         logInfo("Driver now available: %s:%s".format(driverHost, driverPort))
@@ -605,7 +623,7 @@ private[spark] class ApplicationMaster(
         case e: Exception =>
           logError("Failed to connect to driver at %s:%s, retrying ...".
             format(driverHost, driverPort))
-          Thread.sleep(100L)
+          Thread.sleep(100L)  /*等待100ms进入下次循环*/
       }
     }
 
@@ -616,6 +634,7 @@ private[spark] class ApplicationMaster(
     sparkConf.set("spark.driver.host", driverHost)
     sparkConf.set("spark.driver.port", driverPort.toString)
 
+    /*创建一个RpcEndpoint用于和Driver交流。*/
     runAMEndpoint(driverHost, driverPort.toString, isClusterMode = false)
   }
 
@@ -672,7 +691,7 @@ private[spark] class ApplicationMaster(
     val userThread = new Thread {
       override def run() {
         try {
-          /*执行*/
+          /*执行main方法*/
           mainMethod.invoke(null, userArgs.toArray)
           finish(FinalApplicationStatus.SUCCEEDED, ApplicationMaster.EXIT_SUCCESS)
           logDebug("Done running users class")
@@ -718,7 +737,7 @@ private[spark] class ApplicationMaster(
 
   /**
    * An [[RpcEndpoint]] that communicates with the driver's scheduler backend.
-   * 一个[[RpcEndpoint]]用来和driver's scheduler backend通信。
+   * 一个[[RpcEndpoint]]用来和driver's task scheduler backend通信【处理driver发送的消息】。
    */
   private class AMEndpoint(
       override val rpcEnv: RpcEnv, driver: RpcEndpointRef, isClusterMode: Boolean)
@@ -734,9 +753,9 @@ private[spark] class ApplicationMaster(
         driver.send(x)
     }
 
-    /*处理driver's scheduler backend的请求*/
+    /*处理driver's  scheduler backend的请求*/
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
-      /*申请Executors*/
+      /*申请Executors【这时候才会调用它requestTotalExecutorsWithPreferredLocalities】*/
       case r: RequestExecutors =>
         Option(allocator) match {
           case Some(a) =>
@@ -755,6 +774,7 @@ private[spark] class ApplicationMaster(
         }
       /*kill指定Executors*/
       case KillExecutors(executorIds) =>
+        /*记录日志，Driver请求杀死的executor列表*/
         logInfo(s"Driver requested to kill executor(s) ${executorIds.mkString(", ")}.")
         Option(allocator) match {
           case Some(a) => executorIds.foreach(a.killExecutor)
@@ -798,14 +818,17 @@ object ApplicationMaster extends Logging {
 
   private var master: ApplicationMaster = _
 
-  /*主函数*/
+  /*主函数，启动*/
   def main(args: Array[String]): Unit = {
     SignalUtils.registerLogger(log)
+    /*new一个ApplicationMasterArguments，用于构造ApplicationMaster*/
     val amArgs = new ApplicationMasterArguments(args)
 
     // Load the properties file with the Spark configuration and set entries as system properties,
     // so that user code run inside the AM also has access to them.
     // Note: we must do this before SparkHadoopUtil instantiated
+    /*如果Spark配置的参数文件不为空，则将其中的参数设置到系统属性中，因为用户的代码（也就是Driver）运行在AM进程里，
+    * 需要访问这些参数*/
     if (amArgs.propertiesFile != null) {
       Utils.getPropertiesFromFile(amArgs.propertiesFile).foreach { case (k, v) =>
         sys.props(k) = v

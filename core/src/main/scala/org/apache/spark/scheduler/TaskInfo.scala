@@ -46,6 +46,7 @@ class TaskInfo(
    * task result was sent immediately when the task finished (as opposed to sending an
    * IndirectTaskResult and later fetching the result from the block manager).
    */
+  /*记录获取到该Task结果的时间（如果是执行完直接发送过来的DirectTaskResult将不会设置）*/
   var gettingResultTime: Long = 0
 
   /**
@@ -72,7 +73,7 @@ class TaskInfo(
   var failed = false
 
   var killed = false
-
+  /*设置获取到结果的时间为当前时间*/
   private[spark] def markGettingResult(time: Long = System.currentTimeMillis) {
     gettingResultTime = time
   }

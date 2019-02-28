@@ -67,6 +67,7 @@ public class TaskMemoryManager {
   static final int OFFSET_BITS = 64 - PAGE_NUMBER_BITS;  // 51
 
   /** The number of entries in the page table. */
+  /*page表中page的数量，8192*/
   private static final int PAGE_TABLE_SIZE = 1 << PAGE_NUMBER_BITS;
 
   /**
@@ -92,6 +93,7 @@ public class TaskMemoryManager {
 
   /**
    * Bitmap for tracking free pages.
+   * bitMap用于跟踪空闲的pages
    */
   private final BitSet allocatedPages = new BitSet(PAGE_TABLE_SIZE);
 

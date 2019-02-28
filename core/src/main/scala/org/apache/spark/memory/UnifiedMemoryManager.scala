@@ -148,7 +148,7 @@ private[spark] class UnifiedMemoryManager private[memory] (
 
     /**
      * The size the execution pool would have after evicting storage memory.
-     *
+     * 删除存储内存后执行池的大小。
      * The execution memory pool divides this quantity among the active tasks evenly to cap
      * the execution memory allocation for each task. It is important to keep this greater
      * than the execution pool size, which doesn't take into account potential memory that
@@ -159,7 +159,11 @@ private[spark] class UnifiedMemoryManager private[memory] (
      * its fair share of execution memory, mistakenly thinking that other tasks can acquire
      * the portion of storage memory that cannot be evicted.
      */
-    def computeMaxExecutionPoolSize(): Long = {
+    /*这个是动态变化的值，当存储内存有空闲时 = 计算内存池和存储内存池的总大小 - 已经使用的存储内；
+    * 当存储内存没有空闲还借用了计算内存池的时候 = 计算内存池的大小*/
+    /*也可以这样理解，存储有空闲时，= 存储空闲的+计算的；
+    * 存储没空闲时， =计算的*/
+     def computeMaxExecutionPoolSize(): Long = {
       maxMemory - math.min(storagePool.memoryUsed, storageRegionSize)
     }
 

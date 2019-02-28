@@ -63,6 +63,7 @@ private[yarn] class ExecutorRunnable(
     nmClient = NMClient.createNMClient()
     nmClient.init(conf)
     nmClient.start()
+    /*启动Container*/
     startContainer()
   }
 
@@ -85,18 +86,20 @@ private[yarn] class ExecutorRunnable(
 
   /*启动Container*/
   def startContainer(): java.util.Map[String, ByteBuffer] = {
+    /*创建ContainerLaunchContext*/
     val ctx = Records.newRecord(classOf[ContainerLaunchContext])
       .asInstanceOf[ContainerLaunchContext]
     val env = prepareEnvironment().asJava
-
+    /*设置本地资源（jar等）*/
     ctx.setLocalResources(localResources.asJava)
+    /*设置执行环境*/
     ctx.setEnvironment(env)
 
     val credentials = UserGroupInformation.getCurrentUser().getCredentials()
     val dob = new DataOutputBuffer()
     credentials.writeTokenStorageToStream(dob)
     ctx.setTokens(ByteBuffer.wrap(dob.getData()))
-
+    /*创建启动命令*/
     val commands = prepareCommand()
 
     ctx.setCommands(commands.asJava)
@@ -120,6 +123,7 @@ private[yarn] class ExecutorRunnable(
     }
 
     // Send the start request to the ContainerManager
+    /*向NM的ContainerManager发送启动Container的请求*/
     try {
       nmClient.startContainer(container.get, ctx)
     } catch {
@@ -128,7 +132,7 @@ private[yarn] class ExecutorRunnable(
           s" on host $hostname", ex)
     }
   }
-  /*构造启动CoarseGrainedExecutorBackend的命令*/
+  /*构造启动CoarseGrainedExecutorBackend的命令【container执行的是CoarseGrainedExecutorBackend】*/
   private def prepareCommand(): List[String] = {
     // Extra options for the JVM
     val javaOpts = ListBuffer[String]()
@@ -138,6 +142,7 @@ private[yarn] class ExecutorRunnable(
     var prefixEnv: Option[String] = None
 
     // Set the JVM memory
+    /*设置最大堆内存Xmx*/
     val executorMemoryString = executorMemory + "m"
     javaOpts += "-Xmx" + executorMemoryString
 

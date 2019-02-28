@@ -25,6 +25,8 @@ package org.apache.spark.scheduler
  * 如果整个job失败也会通知(也就是不会再发生tasksuccessful事件)。
  */
 private[spark] trait JobListener {
+  /*job成功时执行*/
   def taskSucceeded(index: Int, result: Any): Unit
+  /*job失败时执行*/
   def jobFailed(exception: Exception): Unit
 }

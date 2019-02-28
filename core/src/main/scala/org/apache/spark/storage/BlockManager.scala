@@ -319,6 +319,7 @@ private[spark] class BlockManager(
    * 获取本地block数据的接口。如果找不到此block或者不能被成功读取，则抛出异常。
    */
   override def getBlockData(blockId: BlockId): ManagedBuffer = {
+    /*如果是ShuffleBlock会调用shuffleBlockResolver的getBlockData*/
     if (blockId.isShuffle) {
       shuffleManager.shuffleBlockResolver.getBlockData(blockId.asInstanceOf[ShuffleBlockId])
     } else {
@@ -919,6 +920,7 @@ private[spark] class BlockManager(
       keepReadLock: Boolean)(putBody: BlockInfo => Option[T]): Option[T] = {
 
     require(blockId != null, "BlockId is null")
+    /*StorageLevel一定不能为null*/
     require(level != null && level.isValid, "StorageLevel is null or invalid")
 
     val putBlockInfo = {

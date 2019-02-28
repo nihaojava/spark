@@ -267,6 +267,7 @@ private[spark] class ExecutorAllocationManager(
     /*设置executor线程池要执行的任务，和调度时间间隔，100ms*/
     executor.scheduleWithFixedDelay(scheduleTask, 0, intervalMillis, TimeUnit.MILLISECONDS)
     /*根据我们的调度需求请求更新集群管理器。*/
+    /*这是初始启动的时候*/
     client.requestTotalExecutors(numExecutorsTarget, localityAwareTasks, hostToLocalTaskCount)
   }
 
@@ -294,6 +295,7 @@ private[spark] class ExecutorAllocationManager(
   /**
    * The maximum number of executors we would need under the current load to satisfy all running
    * and pending tasks, rounded up.
+   * 当前负载下满足所有正在运行和挂起的任务所需的最大执行器数量，四舍五入。
    */
   /*计算需要的最大executors数*/
   private def maxNumExecutorsNeeded(): Int = {
@@ -313,6 +315,7 @@ private[spark] class ExecutorAllocationManager(
    *
    * This is factored out into its own method for testing.
    */
+  /*执行的定时任务*/
   private def schedule(): Unit = synchronized {
     val now = clock.getTimeMillis
 
@@ -342,15 +345,18 @@ private[spark] class ExecutorAllocationManager(
 
   /**
    * Updates our target number of executors and syncs the result with the cluster manager.
-   *
+   * 更新我们的目标执行器数量，并将结果与集群管理器同步。
    * Check to see whether our existing allocation and the requests we've made previously exceed our
    * current needs. If so, truncate our target and let the cluster manager know so that it can
    * cancel pending requests that are unneeded.
+   * 检查我们现有的分配和以前提出的请求是否超出了当前的需求。
+如果是，截断我们的目标，并让集群管理器知道，这样它就可以取消不需要的挂起的请求。
    *
    * If not, and the add time has expired, see if we can request new executors and refresh the add
    * time.
-   *
+   * 如果没有，并且添加时间已经过期，请查看是否可以请求新的执行器并刷新添加时间。
    * @return the delta in the target number of executors.
+   *         目标执行器数量中的增量。
    */
   /*同步更新目标Executors数*/
   private def updateAndSyncNumExecutorsTarget(now: Long): Int = synchronized {
@@ -366,22 +372,26 @@ private[spark] class ExecutorAllocationManager(
       /*如果 实际需要的最大Executors数 < 期望目标Executors数 */
       // The target number exceeds the number we actually need, so stop adding new
       // executors and inform the cluster manager to cancel the extra pending requests
-      /*调整期望目标Executors数 */
+      /*保留当前executors数 */
       val oldNumExecutorsTarget = numExecutorsTarget
       /*numExecutorsTarget不能小于minNumExecutors*/
+      /*更新numExecutorsTarget，为maxNeeded*/
       numExecutorsTarget = math.max(maxNeeded, minNumExecutors)
+      /*下一轮要添加的executor赋值为 1*/
       numExecutorsToAdd = 1
 
       // If the new target has not changed, avoid sending a message to the cluster manager
-      if (numExecutorsTarget < oldNumExecutorsTarget) {
-        /*取消多余的executors,目前什么都没做*/
+      /*如果新目标没有更改，请避免向集群管理器发送消息*/
+      if (numExecutorsTarget < oldNumExecutorsTarget) {/*此时需要的 小于 现有的*/
+        /*调整numExecutorsTarget*/
         client.requestTotalExecutors(numExecutorsTarget, localityAwareTasks, hostToLocalTaskCount)
         logDebug(s"Lowering target number of executors to $numExecutorsTarget (previously " +
           s"$oldNumExecutorsTarget) because not all requested executors are actually needed")
       }
       /*新的期望Executors数 - 旧的期望Executors数，此时为负值*/
       numExecutorsTarget - oldNumExecutorsTarget
-    } else if (addTime != NOT_SET && now >= addTime) {
+    } else if (addTime != NOT_SET && now >= addTime) {  /*添加executor*/
+      /**/
       /*到此步说明 实际需要的最大Executors数 >= 期望目标Executors数 */
       /*添加Executors，参数为需要的最大Executors数*/
       val delta = addExecutors(maxNeeded)
@@ -404,6 +414,7 @@ private[spark] class ExecutorAllocationManager(
    *                              tasks could fill
    * @return the number of additional executors actually requested.
    */
+  /*【这个方法要好好理解理解，逻辑比较复杂】*/
   private def addExecutors(maxNumExecutorsNeeded: Int): Int = {
     /*当调用此方法时 maxNumExecutorsNeeded > numExecutorsTarget*/
     // Do not request more executors if it would put our target over the upper bound
@@ -417,9 +428,10 @@ private[spark] class ExecutorAllocationManager(
     val oldNumExecutorsTarget = numExecutorsTarget
     // There's no point in wasting time ramping up to the number of executors we already have, so
     // make sure our target is at least as much as our current allocation:
+    /*没有必要浪费时间增加我们已经拥有的executors的数量，因此确保我们的目标至少与当前的分配相同*/
     numExecutorsTarget = math.max(numExecutorsTarget, executorIds.size)
     // Boost our target with the number to add for this round:
-    //当前numExecutorsTarget增加增长因子个
+    //当前numExecutorsTarget增加增长因子个【所以缺失不是一次申请足够的executor，而是以1,2，4这样的方式多轮申请】
     numExecutorsTarget += numExecutorsToAdd
     // Ensure that our target doesn't exceed what we need at the present moment:
     /*确保我们的目标不会超出现在的需要，也就是数不能大于maxNumExecutorsNeeded*/
@@ -451,7 +463,7 @@ private[spark] class ExecutorAllocationManager(
       /*设置新的增长指数，
       如果差值和现在的增长指数一样，新的增长指数=现在的增长指数*2，否则为1*/
       numExecutorsToAdd = if (delta == numExecutorsToAdd) {
-        numExecutorsToAdd * 2
+        numExecutorsToAdd * 2 /*以【1,2,4,8 这样的方式申请】*/
       } else {
         1
       }
@@ -603,8 +615,10 @@ private[spark] class ExecutorAllocationManager(
    */
   private def onSchedulerBacklogged(): Unit = synchronized {
     if (addTime == NOT_SET) {
-      logDebug(s"Starting timer to add executors because pending tasks " +
+      /*启动添加executors计时器，因为等待的tasks堆积 */
+      logDebug(s"Starting timer to add executors because pending tasks（） " +
         s"are building up (to expire in $schedulerBacklogTimeoutS seconds)")
+      /*当前时间加1s*/
       addTime = clock.getTimeMillis + schedulerBacklogTimeoutS * 1000
     }
   }
@@ -678,11 +692,14 @@ private[spark] class ExecutorAllocationManager(
    * for speculated tasks.
    */
   private class ExecutorAllocationListener extends SparkListener {
-
+    /*记录stageid 和 该stage需要计算的task数量*/
     private val stageIdToNumTasks = new mutable.HashMap[Int, Int]
+    /*记录 stageid 和 taskids*/
     private val stageIdToTaskIndices = new mutable.HashMap[Int, mutable.HashSet[Int]]
+    /*记录 executorid 和 taskids*/
     private val executorIdToTaskIds = new mutable.HashMap[String, mutable.HashSet[Long]]
     // Number of tasks currently running on the cluster.  Should be 0 when no stages are active.
+    /*当前在集群上运行的任务数。当没有活动的阶段时，应该为0。*/
     private var numRunningTasks: Int = _
 
     // stageId to tuple (the number of task with locality preferences, a map where each pair is a
@@ -691,15 +708,19 @@ private[spark] class ExecutorAllocationManager(
     // place the executors.
     private val stageIdToExecutorPlacementHints = new mutable.HashMap[Int, (Int, Map[String, Int])]
 
+    /*stage提交时触发*/
     override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = {
       initializing = false
       val stageId = stageSubmitted.stageInfo.stageId
       val numTasks = stageSubmitted.stageInfo.numTasks
       allocationManager.synchronized {
+        /*更新stageIdToNumTasks*/
         stageIdToNumTasks(stageId) = numTasks
+        /*更新addTime*/
         allocationManager.onSchedulerBacklogged()
 
         // Compute the number of tasks requested by the stage on each host
+        /*计算每个主机上stage请求的任务数量*/
         var numTasksPending = 0
         val hostToLocalTaskCountPerStage = new mutable.HashMap[String, Int]()
         stageSubmitted.stageInfo.taskLocalityPreferences.foreach { locality =>
@@ -715,6 +736,7 @@ private[spark] class ExecutorAllocationManager(
           (numTasksPending, hostToLocalTaskCountPerStage.toMap))
 
         // Update the executor placement hints
+        /*更新executor放置提示*/
         updateExecutorPlacementHints()
       }
     }

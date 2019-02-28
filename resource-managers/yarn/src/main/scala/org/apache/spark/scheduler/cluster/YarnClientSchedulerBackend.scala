@@ -39,6 +39,8 @@ private[spark] class YarnClientSchedulerBackend(
   /**
    * Create a Yarn client to submit an application to the ResourceManager.
    * This waits until the application is running.
+   * 创建一个Yarn client 用于提交application到RM。
+   * Yarn client一直会等到application运行起来。
    */
   override def start() {
     val driverHost = conf.get("spark.driver.host")
@@ -51,14 +53,20 @@ private[spark] class YarnClientSchedulerBackend(
 
     logDebug("ClientArguments called with: " + argsArrayBuf.mkString(" "))
     val args = new ClientArguments(argsArrayBuf.toArray)
+    /*获取期望申请的Executors个数*/
     totalExpectedExecutors = YarnSparkHadoopUtil.getInitialTargetExecutorNumber(conf)
+    /*new一个yarn Client*/
     client = new Client(args, conf)
+    /*向RM提交运行ApplicationMaster的应用程序（o.a.s.deploy.yarn.ApplicationMaster即spark实现的AM类）*/
+    /*并记录applicationID到appID*/
     bindToYarn(client.submitApplication(), None)
 
     // SPARK-8687: Ensure all necessary properties have already been set before
     // we initialize our driver scheduler backend, which serves these properties
     // to the executors
     super.start()
+    /*等待application直到运行状态【提交application后，RM会有经过一个启动AM的流程，
+    最后才能将Application的状态更新为running】*/
     waitForApplication()
 
     // SPARK-8851: In yarn-client mode, the AM still does the credentials refresh. The driver
@@ -67,6 +75,7 @@ private[spark] class YarnClientSchedulerBackend(
     if (conf.contains("spark.yarn.credentials.file")) {
       YarnSparkHadoopUtil.get.startCredentialUpdater(conf)
     }
+    /*启动线程监控Application*/
     monitorThread = asyncMonitorApplication()
     monitorThread.start()
   }
@@ -76,6 +85,7 @@ private[spark] class YarnClientSchedulerBackend(
    * If the application has finished, failed or been killed in the process, throw an exception.
    * This assumes both `client` and `appId` have already been set.
    */
+  /*报告application的状态，直到它运行起来*/
   private def waitForApplication(): Unit = {
     assert(client != null && appId.isDefined, "Application has not been submitted yet!")
     val (state, _) = client.monitorApplication(appId.get, returnOnRunning = true) // blocking
@@ -123,6 +133,7 @@ private[spark] class YarnClientSchedulerBackend(
    * If the application has exited for any reason, stop the SparkContext.
    * This assumes both `client` and `appId` have already been set.
    */
+  /*一个单独的线程监控application的状态*/
   private def asyncMonitorApplication(): MonitorThread = {
     assert(client != null && appId.isDefined, "Application has not been submitted yet!")
     val t = new MonitorThread

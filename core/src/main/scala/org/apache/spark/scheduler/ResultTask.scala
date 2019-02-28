@@ -28,7 +28,7 @@ import org.apache.spark.rdd.RDD
 
 /**
  * A task that sends back the output to the driver application.
- *
+ * 将计算结果发送给Driver的Task，ReusultTask
  * See [[Task]] for more information.
  *
  * @param stageId id of the stage this task belongs to
@@ -36,8 +36,9 @@ import org.apache.spark.rdd.RDD
  * @param taskBinary broadcasted version of the serialized RDD and the function to apply on each
  *                   partition of the given RDD. Once deserialized, the type should be
  *                   (RDD[T], (TaskContext, Iterator[T]) => U).
+ *                   【反序列化后得到测结果，rdd，func】
  * @param partition partition of the RDD this task is associated with
- * @param locs preferred task execution locations for locality scheduling
+ * @param locs preferred task execution locations for locality scheduling 首选位置
  * @param outputId index of the task in this job (a job can launch tasks on only a subset of the
  *                 input RDD's partitions).
  * @param localProperties copy of thread-local properties set by the user on the driver side.
@@ -52,9 +53,9 @@ import org.apache.spark.rdd.RDD
 private[spark] class ResultTask[T, U](
     stageId: Int,
     stageAttemptId: Int,
-    taskBinary: Broadcast[Array[Byte]],
+    taskBinary: Broadcast[Array[Byte]], /*taskBinary，对rdd，func的一个序列化*/
     partition: Partition,
-    locs: Seq[TaskLocation],
+    locs: Seq[TaskLocation],  /*执行的首选位置列表*/
     val outputId: Int,
     localProperties: Properties,
     serializedTaskMetrics: Array[Byte],
@@ -69,6 +70,8 @@ private[spark] class ResultTask[T, U](
     if (locs == null) Nil else locs.toSet.toSeq
   }
 
+  /*executor最后会运行该方法*/
+  /*/*返回值为U，对于ResultTask是具体结果内容*/*/
   override def runTask(context: TaskContext): U = {
     // Deserialize the RDD and the func using the broadcast variables.
     val threadMXBean = ManagementFactory.getThreadMXBean
@@ -77,13 +80,14 @@ private[spark] class ResultTask[T, U](
       threadMXBean.getCurrentThreadCpuTime
     } else 0L
     val ser = SparkEnv.get.closureSerializer.newInstance()
+    /*反序列化RDD使用到的Broadcast变量taskBinary，得到(rdd, dep)*/
     val (rdd, func) = ser.deserialize[(RDD[T], (TaskContext, Iterator[T]) => U)](
       ByteBuffer.wrap(taskBinary.value), Thread.currentThread.getContextClassLoader)
     _executorDeserializeTime = System.currentTimeMillis() - deserializeStartTime
     _executorDeserializeCpuTime = if (threadMXBean.isCurrentThreadCpuTimeSupported) {
       threadMXBean.getCurrentThreadCpuTime - deserializeStartCpuTime
     } else 0L
-
+    /*执行rdd的rdd.iterator(partition, context)方法，并对执行的结果执行func*/
     func(context, rdd.iterator(partition, context))
   }
 

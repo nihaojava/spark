@@ -39,12 +39,12 @@ import org.apache.spark.util.CallSite
  */
 private[spark] class ShuffleMapStage(
     id: Int,
-    rdd: RDD[_],
+    rdd: RDD[_],  /*下面ShuffleDependency里包含的rdd*/
     numTasks: Int,
     parents: List[Stage],
     firstJobId: Int,
     callSite: CallSite,
-    val shuffleDep: ShuffleDependency[_, _, _]) /**/
+    val shuffleDep: ShuffleDependency[_, _, _]) /*ShuffleDependency，是为给Dependency创建的ShuffleMapStage*/
   extends Stage(id, rdd, numTasks, parents, firstJobId, callSite) {
 
   /*与当前ShuffleMapStage相关联的ActiveJob列表*/
@@ -135,6 +135,7 @@ private[spark] class ShuffleMapStage(
    * value contains only one (i.e. the first) [[MapStatus]]. If there is no entry for the partition,
    * that position is filled with null.
    */
+  /*对outputLocs中的数据处理（outputLocs中的数据不会改变），返回map之后的*/
   def outputLocInMapOutputTrackerFormat(): Array[MapStatus] = {
     outputLocs.map(_.headOption.orNull)
   }

@@ -321,9 +321,11 @@ class LauncherServer implements Closeable {
             msg != null ? msg.getClass().getName() : null);
           }
           if (msg instanceof SetAppId) {
+            /*会触发执行用户定义的listener的对应处理方法*/
             SetAppId set = (SetAppId) msg;
             handle.setAppId(set.appId);
           } else if (msg instanceof SetState) {
+            /*会触发执行用户定义的listener的对应处理方法*/
             handle.setState(((SetState)msg).state);
           } else {
             throw new IllegalArgumentException("Invalid message: " +

@@ -24,9 +24,9 @@ import org.apache.spark.util.collection.ExternalAppendOnlyMap
  * :: DeveloperApi ::
  * A set of functions used to aggregate data.
  *
- * @param createCombiner function to create the initial value of the aggregation.
- * @param mergeValue function to merge a new value into the aggregation result.
- * @param mergeCombiners function to merge outputs from multiple mergeValue function.
+ * @param createCombiner function to create the initial value of the aggregation. 函数创建聚合的初始值。
+ * @param mergeValue function to merge a new value into the aggregation result. 函数的作用是:将新值合并到聚合结果中。
+ * @param mergeCombiners function to merge outputs from multiple mergeValue function. 函数合并多个mergeValue函数的输出。
  */
 @DeveloperApi
 case class Aggregator[K, V, C] (
@@ -46,6 +46,7 @@ case class Aggregator[K, V, C] (
   def combineCombinersByKey(
       iter: Iterator[_ <: Product2[K, C]],
       context: TaskContext): Iterator[(K, C)] = {
+    /*ExternalAppendOnlyMap*/
     val combiners = new ExternalAppendOnlyMap[K, C, C](identity, mergeCombiners, mergeCombiners)
     combiners.insertAll(iter)
     updateMetrics(context, combiners)

@@ -36,7 +36,7 @@ import org.apache.spark.util.random.SamplingUtils
  * 映射每个key到一个partition ID，ID从 0 到 `分区数-1`
  */
 abstract class Partitioner extends Serializable {
-  def numPartitions: Int
+  def numPartitions: Int    /*分区个数，也是下个stage中task的个数*/
   def getPartition(key: Any): Int
 }
 
@@ -104,6 +104,7 @@ class HashPartitioner(partitions: Int) extends Partitioner {
     case _ => Utils.nonNegativeMod(key.hashCode, numPartitions)
   }
   // 比较两个HashPartitioner是否相同，算法一样，所以就是比较分区个数是否相同就可以
+  /*【重要】*/
   override def equals(other: Any): Boolean = other match {
     case h: HashPartitioner =>
       h.numPartitions == numPartitions
@@ -125,8 +126,8 @@ class HashPartitioner(partitions: Int) extends Partitioner {
  * 这种情况，是因为抽样的记录数小于分区数。
  */
 class RangePartitioner[K : Ordering : ClassTag, V](
-    partitions: Int,
-    rdd: RDD[_ <: Product2[K, V]],
+    partitions: Int,  /*期望得到的分区个数*/
+    rdd: RDD[_ <: Product2[K, V]],  /*当前rdd*/
     private var ascending: Boolean = true)
   extends Partitioner {
 

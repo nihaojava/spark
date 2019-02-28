@@ -72,9 +72,10 @@ abstract class NarrowDependency[T](_rdd: RDD[T]) extends Dependency[T] {
  * map端输出是否完成部分聚合
  */
 @DeveloperApi
+/* ShuffleDependency既决定了父RDD的ShuffleWriter，又决定了子RDD的ShuffleReader*/
 class ShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
-    @transient private val _rdd: RDD[_ <: Product2[K, V]],  /*要求RDD中的元素必须是Product2[K, V]及其子类*/
-    val partitioner: Partitioner, /*分区器*/
+    @transient private val _rdd: RDD[_ <: Product2[K, V]],  /*父RDD，要求RDD中的元素必须是Product2[K, V]及其子类*/
+    val partitioner: Partitioner, /*分区器【用于分区shuffle的输出】*/
     val serializer: Serializer = SparkEnv.get.serializer, /*java序列化器*/
     val keyOrdering: Option[Ordering[K]] = None, /*对key进行排序的排序器*/
     val aggregator: Option[Aggregator[K, V, C]] = None, /*对map任务的输出数据进行聚合的聚合器*/
